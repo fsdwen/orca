@@ -299,6 +299,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
 }: VirtualizedWorktreeViewportProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const suppressMeasurementAdjustmentUntilRef = useRef(0)
+  const directScrollInputUntilRef = useRef(0)
   const [dragOverStatus, setDragOverStatus] = useState<WorkspaceStatus | null>(null)
   const [pinDragOver, setPinDragOver] = useState(false)
   const [lineageReconnectWorktreeId, setLineageReconnectWorktreeId] = useState<string | null>(null)
@@ -394,12 +395,23 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     },
     [isCurrentVirtualRowElement]
   )
-  const markDirectScrollInput = useCallback(() => {
+  const markScrollMovement = useCallback(() => {
     suppressMeasurementAdjustmentUntilRef.current =
       window.performance.now() + USER_SCROLL_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS
   }, [])
+  const markDirectScrollInput = useCallback(() => {
+    const suppressUntil = window.performance.now() + USER_SCROLL_MEASUREMENT_ADJUSTMENT_SUPPRESS_MS
+    suppressMeasurementAdjustmentUntilRef.current = suppressUntil
+    directScrollInputUntilRef.current = suppressUntil
+  }, [])
+  const hasDirectScrollInput = useCallback(
+    () => window.performance.now() < directScrollInputUntilRef.current,
+    []
+  )
+  // Why: programmatic scrolls should keep measurement correction quiet, but
+  // only direct input should block anchor restoration retries.
   const shouldSkipScrollAnchorRestore = useCallback(
-    () => window.performance.now() < suppressMeasurementAdjustmentUntilRef.current,
+    () => window.performance.now() < directScrollInputUntilRef.current,
     []
   )
 
@@ -566,6 +578,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     rows: renderRows,
     scrollElementRef: scrollRef,
     scrollOffsetRef,
+    hasDirectScrollInput,
     shouldSkipRestore: shouldSkipScrollAnchorRestore,
     totalSize,
     virtualizer
@@ -665,6 +678,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       }
 
       if (mod && e.shiftKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        markDirectScrollInput()
         navigateWorktree(e.key === 'ArrowUp' ? 'up' : 'down')
         e.preventDefault()
       }
@@ -672,7 +686,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
 
     window.addEventListener('keydown', handleKeyDown, { capture: true })
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true })
-  }, [activeModal, navigateWorktree])
+  }, [activeModal, markDirectScrollInput, navigateWorktree])
 
   // Why: lightweight nested cards do not mount WorktreeCard, so the viewport
   // owns the SSH reconnect prompt for an active lineage child.
@@ -688,6 +702,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
         if (e.target !== e.currentTarget) {
           return
         }
+        markDirectScrollInput()
         navigateWorktree(e.key === 'ArrowUp' ? 'up' : 'down')
         e.preventDefault()
       } else if (e.key === 'Enter') {
@@ -698,9 +713,25 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
           helper.focus()
         }
         e.preventDefault()
+      } else if (['PageUp', 'PageDown', 'Home', 'End', ' '].includes(e.key)) {
+        markDirectScrollInput()
       }
     },
-    [navigateWorktree]
+    [markDirectScrollInput, navigateWorktree]
+  )
+
+  const handleScrollPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const scrollbarWidth = event.currentTarget.offsetWidth - event.currentTarget.clientWidth
+      if (scrollbarWidth <= 0) {
+        return
+      }
+      const rect = event.currentTarget.getBoundingClientRect()
+      if (event.clientX >= rect.right - scrollbarWidth) {
+        markDirectScrollInput()
+      }
+    },
+    [markDirectScrollInput]
   )
 
   const firstHeaderIndex = useMemo(
@@ -800,6 +831,11 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       aria-multiselectable="true"
       aria-activedescendant={activeDescendantId}
       onKeyDown={handleContainerKeyDown}
+      // Why: trackpad momentum can continue as sparse scroll events after the
+      // original wheel/touch event stream quiets down. Keep measurement-based
+      // scroll correction suppressed until the viewport itself has stopped.
+      onScroll={markScrollMovement}
+      onPointerDown={handleScrollPointerDown}
       onTouchMove={markDirectScrollInput}
       onWheel={markDirectScrollInput}
       className="worktree-sidebar-scrollbar flex-1 overflow-y-scroll overflow-x-hidden pl-1 scrollbar-sleek outline-none focus-visible:ring-1 focus-visible:ring-ring focus-visible:ring-inset pt-px"
