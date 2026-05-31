@@ -8,6 +8,7 @@ import type { ReviewStep, ReviewStepId } from '../../../../shared/review-steps'
 import type { FeatureWallOpenSourceTelemetry } from '../../../../shared/telemetry-events'
 import type { GlobalSettings } from '../../../../shared/types'
 import type { WorkbenchStep, WorkbenchStepId } from '../../../../shared/workbench-steps'
+import type { InstalledAgentSkillState } from '@/hooks/useInstalledAgentSkills'
 import { cn } from '@/lib/utils'
 import type { FeatureWallCompletionState } from './use-feature-wall-completion'
 import { FeatureWallBody } from './FeatureWallBody'
@@ -47,8 +48,8 @@ export function FeatureWallTourPanel(props: {
   showGif: boolean
   prefersReducedMotion: boolean
   source: FeatureWallOpenSourceTelemetry
-  onOrchestrationSkillInstalledChange: (installed: boolean) => void
-  onBrowserUseSkillInstalledChange: (installed: boolean) => void
+  orchestrationSkill: InstalledAgentSkillState
+  browserUseSkill: InstalledAgentSkillState
   settings: GlobalSettings | null
   updateSettings: (updates: Partial<GlobalSettings>) => void
   footerText: string | null
@@ -139,8 +140,8 @@ export function FeatureWallTourPanel(props: {
             agentsActiveStep={props.agentsActiveStep}
             workbenchActiveStep={props.workbenchActiveStep}
             reviewActiveStep={props.reviewActiveStep}
-            onOrchestrationSkillInstalledChange={props.onOrchestrationSkillInstalledChange}
-            onBrowserUseSkillInstalledChange={props.onBrowserUseSkillInstalledChange}
+            orchestrationSkill={props.orchestrationSkill}
+            browserUseSkill={props.browserUseSkill}
             onUsageAccountStateChange={props.completion.refreshUsageAccountState}
             settings={props.settings}
             updateSettings={props.updateSettings}

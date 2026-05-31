@@ -5,6 +5,7 @@ import type { AgentsStep } from '../../../../shared/agents-orchestration-steps'
 import type { WorkbenchStep } from '../../../../shared/workbench-steps'
 import type { ReviewStep } from '../../../../shared/review-steps'
 import type { GlobalSettings } from '../../../../shared/types'
+import type { InstalledAgentSkillState } from '@/hooks/useInstalledAgentSkills'
 import { cn } from '@/lib/utils'
 import { PreviewMedia, RelatedFeatures } from './FeatureWallPreview'
 import { TasksAnimatedVisual } from './TasksAnimatedVisual'
@@ -31,8 +32,8 @@ export function FeatureWallBody(props: {
   agentsActiveStep: AgentsStep | null
   workbenchActiveStep: WorkbenchStep | null
   reviewActiveStep: ReviewStep | null
-  onOrchestrationSkillInstalledChange: (installed: boolean) => void
-  onBrowserUseSkillInstalledChange: (installed: boolean) => void
+  orchestrationSkill: InstalledAgentSkillState
+  browserUseSkill: InstalledAgentSkillState
   onUsageAccountStateChange: () => void | Promise<void>
   settings: GlobalSettings | null
   updateSettings: (updates: Partial<GlobalSettings>) => void
@@ -47,8 +48,8 @@ export function FeatureWallBody(props: {
     agentsActiveStep,
     workbenchActiveStep,
     reviewActiveStep,
-    onOrchestrationSkillInstalledChange,
-    onBrowserUseSkillInstalledChange,
+    orchestrationSkill,
+    browserUseSkill,
     onUsageAccountStateChange
   } = props
   const isWorkspaces = selected.id === 'workspaces'
@@ -127,17 +128,9 @@ export function FeatureWallBody(props: {
   ) : isAgentsUsage ? (
     <UsageAccountsCard onAccountStateChange={onUsageAccountStateChange} />
   ) : isAgentsOrchestration ? (
-    <OrchestrationSetupCard
-      compact
-      terminalHeightPx={240}
-      onInstalledChange={onOrchestrationSkillInstalledChange}
-    />
+    <OrchestrationSetupCard compact terminalHeightPx={240} skill={orchestrationSkill} />
   ) : isWorkbenchBrowser ? (
-    <BrowserUseSkillSetupCard
-      compact
-      terminalHeightPx={240}
-      onInstalledChange={onBrowserUseSkillInstalledChange}
-    />
+    <BrowserUseSkillSetupCard compact terminalHeightPx={240} skill={browserUseSkill} />
   ) : isReviewPrView ? (
     <GitHubRow compact />
   ) : isReviewShip ? (

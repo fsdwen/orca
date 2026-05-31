@@ -15,6 +15,11 @@ import type { FeatureWallOpenSourceTelemetry } from '../../../../shared/telemetr
 import type { FeatureWallTourDepthSummary } from '../../../../shared/feature-wall-tour-depth'
 import { track } from '@/lib/telemetry'
 import { useAppStore } from '@/store'
+import { ORCA_CLI_SKILL_NAME, ORCHESTRATION_SKILL_NAME } from '@/lib/agent-feature-install-commands'
+import {
+  GLOBAL_AGENT_SKILL_SOURCE_KINDS,
+  useInstalledAgentSkill
+} from '@/hooks/useInstalledAgentSkills'
 import { usePrefersReducedMotion } from './feature-wall-modal-helpers'
 import {
   getFeatureWallRailNavigationTarget,
@@ -104,14 +109,23 @@ export function FeatureWallTourSurface({
       setReviewStepId(reviewSteps[0]?.id ?? 'notes')
     }
   }
-  const [orchestrationSkillInstalled, setOrchestrationSkillInstalled] = useState(false)
-  const [browserUseSkillInstalled, setBrowserUseSkillInstalled] = useState(false)
+  // Why: the feature-wall completion model owns skill-completion state, so read
+  // installed skills here instead of asking child setup cards to notify upward
+  // from passive Effects.
+  const orchestrationSkill = useInstalledAgentSkill(ORCHESTRATION_SKILL_NAME, {
+    enabled: isOpen,
+    sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
+  })
+  const browserUseSkill = useInstalledAgentSkill(ORCA_CLI_SKILL_NAME, {
+    enabled: isOpen,
+    sourceKinds: GLOBAL_AGENT_SKILL_SOURCE_KINDS
+  })
   const completion = useFeatureWallCompletion(
     isOpen,
     taskSourcePresentation.hasConnectedTaskSource,
     taskSourcePresentation.isCheckingTaskSources,
-    orchestrationSkillInstalled,
-    browserUseSkillInstalled,
+    orchestrationSkill.installed,
+    browserUseSkill.installed,
     { onTourDepthSummaryChange }
   )
   const { markExitAction } = useFeatureWallTourTelemetry({
@@ -385,8 +399,8 @@ export function FeatureWallTourSurface({
       showGif={showGif}
       prefersReducedMotion={prefersReducedMotion}
       source={source}
-      onOrchestrationSkillInstalledChange={setOrchestrationSkillInstalled}
-      onBrowserUseSkillInstalledChange={setBrowserUseSkillInstalled}
+      orchestrationSkill={orchestrationSkill}
+      browserUseSkill={browserUseSkill}
       settings={settings}
       updateSettings={updateSettings}
       footerText={footerText}
