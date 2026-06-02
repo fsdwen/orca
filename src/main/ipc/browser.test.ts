@@ -15,7 +15,8 @@ const {
   acceptDownloadMock,
   cancelDownloadMock,
   showSaveDialogMock,
-  browserWindowFromWebContentsMock
+  browserWindowFromWebContentsMock,
+  webContentsFromIdMock
 } = vi.hoisted(() => ({
   removeHandlerMock: vi.fn(),
   handleMock: vi.fn(),
@@ -30,7 +31,8 @@ const {
   acceptDownloadMock: vi.fn(),
   cancelDownloadMock: vi.fn(),
   showSaveDialogMock: vi.fn(),
-  browserWindowFromWebContentsMock: vi.fn()
+  browserWindowFromWebContentsMock: vi.fn(),
+  webContentsFromIdMock: vi.fn()
 }))
 
 vi.mock('electron', () => ({
@@ -43,6 +45,9 @@ vi.mock('electron', () => ({
   ipcMain: {
     removeHandler: removeHandlerMock,
     handle: handleMock
+  },
+  webContents: {
+    fromId: webContentsFromIdMock
   }
 }))
 
@@ -87,6 +92,8 @@ describe('registerBrowserHandlers', () => {
     cancelDownloadMock.mockReset()
     showSaveDialogMock.mockReset()
     browserWindowFromWebContentsMock.mockReset()
+    webContentsFromIdMock.mockReset()
+    webContentsFromIdMock.mockReturnValue({ isDestroyed: () => false })
     openDevToolsMock.mockResolvedValue(true)
     setAnnotationViewportBridgeMock.mockResolvedValue(true)
     setAgentBrowserBridgeRef(null)
@@ -290,6 +297,54 @@ describe('registerBrowserHandlers', () => {
     getWebContentsIdByTabIdMock.mockReturnValue(new Map([['page-1', 123]]))
 
     await expect(waitForAnyTabRegistration(1000)).resolves.toBeUndefined()
+  })
+
+  it('does not resolve worktree registration waits from a stale registered guest', async () => {
+    getWebContentsIdByTabIdMock.mockReturnValue(new Map([['page-1', 123]]))
+    getWorktreeIdForTabMock.mockReturnValue('worktree-1')
+    webContentsFromIdMock.mockReturnValue({ isDestroyed: () => true })
+
+    let resolved = false
+    const wait = waitForWorktreeTabRegistration('worktree-1', 1000).then(() => {
+      resolved = true
+    })
+    await Promise.resolve()
+
+    expect(resolved).toBe(false)
+
+    registerBrowserHandlers()
+    const registerHandler = handleMock.mock.calls.find(
+      ([channel]) => channel === 'browser:registerGuest'
+    )?.[1] as (
+      event: { sender: Electron.WebContents },
+      args: {
+        browserPageId: string
+        workspaceId: string
+        worktreeId: string
+        webContentsId: number
+      }
+    ) => boolean
+
+    const result = registerHandler(
+      {
+        sender: {
+          id: 91,
+          isDestroyed: () => false,
+          getType: () => 'window',
+          getURL: () => 'file:///renderer/index.html'
+        } as Electron.WebContents
+      },
+      {
+        browserPageId: 'page-1',
+        workspaceId: 'workspace-1',
+        worktreeId: 'worktree-1',
+        webContentsId: 456
+      }
+    )
+
+    expect(result).toBe(true)
+    await expect(wait).resolves.toBeUndefined()
+    expect(resolved).toBe(true)
   })
 
   it('validates annotation viewport bridge requests before syncing to the guest', async () => {

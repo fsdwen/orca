@@ -1823,9 +1823,13 @@ const api = {
       return () => ipcRenderer.removeListener('browser:navigation-update', listener)
     },
 
-    onActivateView: (callback: (data: { worktreeId?: string }) => void): (() => void) => {
-      const listener = (_event: Electron.IpcRendererEvent, data: { worktreeId?: string }) =>
-        callback(data)
+    onActivateView: (
+      callback: (data: { worktreeId?: string; browserPageId?: string }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { worktreeId?: string; browserPageId?: string }
+      ) => callback(data)
       ipcRenderer.on('browser:activateView', listener)
       return () => ipcRenderer.removeListener('browser:activateView', listener)
     },

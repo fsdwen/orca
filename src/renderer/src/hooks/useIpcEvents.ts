@@ -129,12 +129,38 @@ function releaseBrowserAutomationBootstrapLease(browserPageId: string): void {
   browserAutomationBootstrapLeaseByPageId.delete(browserPageId)
 }
 
+function findBrowserPageWorktreeId(store: AppState, browserPageId: string): string | null {
+  for (const [worktreeId, browserTabs] of Object.entries(store.browserTabsByWorktree)) {
+    for (const workspace of browserTabs) {
+      if (
+        workspace.id === browserPageId ||
+        workspace.activePageId === browserPageId ||
+        workspace.pageIds?.includes(browserPageId)
+      ) {
+        return worktreeId
+      }
+    }
+  }
+
+  for (const pages of Object.values(store.browserPagesByWorkspace)) {
+    const page = pages.find((candidate) => candidate.id === browserPageId)
+    if (page) {
+      return page.worktreeId
+    }
+  }
+
+  return null
+}
+
 function acquireBrowserAutomationBootstrapLease(
   worktreeId: string | null | undefined,
   browserPageId?: string | null
 ): void {
   const store = useAppStore.getState()
-  const targetWorktreeId = worktreeId ?? store.activeWorktreeId
+  const targetWorktreeId =
+    worktreeId ??
+    (browserPageId ? findBrowserPageWorktreeId(store, browserPageId) : null) ??
+    store.activeWorktreeId
   if (!targetWorktreeId) {
     return
   }
@@ -1425,11 +1451,11 @@ export function useIpcEvents(): void {
     // has display != none. Main sends this before browser automation commands
     // so persisted hidden tabs mount without changing the user's active pane.
     unsubs.push(
-      window.api.browser.onActivateView(({ worktreeId }) => {
+      window.api.browser.onActivateView(({ worktreeId, browserPageId }) => {
         if (isRuntimeEnvironmentActive()) {
           return
         }
-        acquireBrowserAutomationBootstrapLease(worktreeId)
+        acquireBrowserAutomationBootstrapLease(worktreeId, browserPageId)
       })
     )
 

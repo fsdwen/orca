@@ -190,16 +190,19 @@ vi.mock('../ports/advertised-url-watcher', () => ({
   }
 }))
 
-const { killAllProcessesForWorktreeMock, getLocalPtyProviderMock } = vi.hoisted(() => ({
-  killAllProcessesForWorktreeMock: vi.fn(),
-  getLocalPtyProviderMock: vi.fn()
-}))
+const { killAllProcessesForWorktreeMock, clearProviderPtyStateMock, getLocalPtyProviderMock } =
+  vi.hoisted(() => ({
+    killAllProcessesForWorktreeMock: vi.fn(),
+    clearProviderPtyStateMock: vi.fn(),
+    getLocalPtyProviderMock: vi.fn()
+  }))
 
 vi.mock('../runtime/worktree-teardown', () => ({
   killAllProcessesForWorktree: killAllProcessesForWorktreeMock
 }))
 
 vi.mock('./pty', () => ({
+  clearProviderPtyState: clearProviderPtyStateMock,
   getLocalPtyProvider: getLocalPtyProviderMock
 }))
 
@@ -290,6 +293,7 @@ describe('registerWorktreeHandlers', () => {
       store.getAllWorktreeLineage,
       store.removeWorktreeLineage,
       killAllProcessesForWorktreeMock,
+      clearProviderPtyStateMock,
       getLocalPtyProviderMock,
       deleteWorktreeHistoryDirMock,
       advertisedUrlWatcherForgetWorktreeMock
@@ -3574,7 +3578,8 @@ describe('registerWorktreeHandlers', () => {
 
     expect(killAllProcessesForWorktreeMock).toHaveBeenCalledWith(worktreeId, {
       runtime: runtimeStub,
-      localProvider: ptyProvider
+      localProvider: ptyProvider,
+      onPtyStopped: clearProviderPtyStateMock
     })
     expect(killAllProcessesForWorktreeMock.mock.invocationCallOrder[0]).toBeLessThan(
       store.removeWorktreeMeta.mock.invocationCallOrder[0]
@@ -4631,7 +4636,8 @@ describe('registerWorktreeHandlers', () => {
     expect(killAllProcessesForWorktreeMock).toHaveBeenCalledWith(
       'repo-1::/workspace/feature-wt',
       expect.objectContaining({
-        localProvider: expect.anything()
+        localProvider: expect.anything(),
+        onPtyStopped: clearProviderPtyStateMock
       })
     )
     expect(removeWorktreeMock).toHaveBeenCalled()

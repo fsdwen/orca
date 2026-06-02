@@ -65,6 +65,7 @@ const electronMocks = vi.hoisted(() => {
   }
   return {
     BrowserWindow: { fromId: vi.fn((_id: number): unknown => null) },
+    webContents: { fromId: vi.fn((_id: number): unknown => null) },
     ipcMain,
     app: { getPath: vi.fn(() => '/tmp') }
   }
@@ -338,6 +339,8 @@ afterEach(() => {
   advertisedUrlWatcher.clear()
   electronMocks.BrowserWindow.fromId.mockReset()
   electronMocks.BrowserWindow.fromId.mockReturnValue(null)
+  electronMocks.webContents.fromId.mockReset()
+  electronMocks.webContents.fromId.mockReturnValue(null)
   electronMocks.ipcMain.on.mockClear()
   electronMocks.ipcMain.removeListener.mockClear()
   electronMocks.ipcMain.emit.mockClear()
@@ -10864,8 +10867,15 @@ describe('OrcaRuntimeService', () => {
   })
 
   describe('browser page targeting', () => {
+    function mockLiveBrowserGuest(): void {
+      electronMocks.webContents.fromId.mockReturnValue({
+        isDestroyed: () => false
+      })
+    }
+
     it('passes explicit page ids through without resolving the current worktree', async () => {
       vi.mocked(listWorktrees).mockClear()
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
       const snapshotMock = vi.fn().mockResolvedValue({
         browserPageId: 'page-1',
@@ -10876,7 +10886,8 @@ describe('OrcaRuntimeService', () => {
       })
 
       runtime.setAgentBrowserBridge({
-        snapshot: snapshotMock
+        snapshot: snapshotMock,
+        getRegisteredTabs: vi.fn(() => new Map([['page-1', 1]]))
       } as never)
 
       const result = await runtime.browserSnapshot({ page: 'page-1' })
@@ -10888,6 +10899,7 @@ describe('OrcaRuntimeService', () => {
 
     it('resolves explicit worktree selectors when page ids are also provided', async () => {
       vi.mocked(listWorktrees).mockClear()
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
       const snapshotMock = vi.fn().mockResolvedValue({
         browserPageId: 'page-1',
@@ -10911,6 +10923,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     it('routes tab switch and capture start by explicit page id', async () => {
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
       const tabSwitchMock = vi.fn().mockResolvedValue({
         switched: 2,
@@ -10922,7 +10935,8 @@ describe('OrcaRuntimeService', () => {
 
       runtime.setAgentBrowserBridge({
         tabSwitch: tabSwitchMock,
-        captureStart: captureStartMock
+        captureStart: captureStartMock,
+        getRegisteredTabs: vi.fn(() => new Map([['page-2', 2]]))
       } as never)
 
       await expect(runtime.browserTabSwitch({ page: 'page-2' })).resolves.toEqual({
@@ -10937,13 +10951,17 @@ describe('OrcaRuntimeService', () => {
     })
 
     it('accepts focus on tab switch without altering bridge args (focus is main-side concern)', async () => {
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
       const tabSwitchMock = vi.fn().mockResolvedValue({
         switched: 0,
         browserPageId: 'page-1'
       })
 
-      runtime.setAgentBrowserBridge({ tabSwitch: tabSwitchMock } as never)
+      runtime.setAgentBrowserBridge({
+        tabSwitch: tabSwitchMock,
+        getRegisteredTabs: vi.fn(() => new Map([['page-1', 1]]))
+      } as never)
 
       await expect(runtime.browserTabSwitch({ page: 'page-1', focus: true })).resolves.toEqual({
         switched: 0,
@@ -10956,6 +10974,7 @@ describe('OrcaRuntimeService', () => {
 
     it('does not silently drop invalid explicit worktree selectors for page-targeted commands', async () => {
       vi.mocked(listWorktrees).mockResolvedValue(MOCK_GIT_WORKTREES)
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
       const snapshotMock = vi.fn()
 
@@ -10992,6 +11011,7 @@ describe('OrcaRuntimeService', () => {
 
     it('rejects closing an unknown page id instead of treating it as success', async () => {
       vi.mocked(listWorktrees).mockResolvedValue(MOCK_GIT_WORKTREES)
+      mockLiveBrowserGuest()
       const runtime = createRuntime()
 
       runtime.setAgentBrowserBridge({
@@ -11006,6 +11026,7 @@ describe('OrcaRuntimeService', () => {
     })
 
     it('rejects closing a page outside the explicitly scoped worktree', async () => {
+      mockLiveBrowserGuest()
       vi.mocked(listWorktrees).mockResolvedValue([
         ...MOCK_GIT_WORKTREES,
         {
@@ -11139,9 +11160,11 @@ describe('OrcaRuntimeService', () => {
         { id: `${TEST_WORKTREE_ID}@@aaaaaaaa`, cwd: '/tmp', title: 'shell' }
       ])
       let currentProvider: ReturnType<typeof createProviderStub> = preDaemonProvider
+      const onPtyStopped = vi.fn()
 
       const runtime = new OrcaRuntimeService(store, undefined, {
-        getLocalProvider: () => currentProvider as never
+        getLocalProvider: () => currentProvider as never,
+        onPtyStopped
       })
       vi.mocked(removeWorktree).mockResolvedValue({})
 
@@ -11155,6 +11178,7 @@ describe('OrcaRuntimeService', () => {
       expect(postDaemonProvider.shutdown).toHaveBeenCalledWith(`${TEST_WORKTREE_ID}@@aaaaaaaa`, {
         immediate: true
       })
+      expect(onPtyStopped).toHaveBeenCalledWith(`${TEST_WORKTREE_ID}@@aaaaaaaa`)
       // The pre-daemon provider must not have been consulted for the kill.
       expect(preDaemonProvider.shutdown).not.toHaveBeenCalled()
     })

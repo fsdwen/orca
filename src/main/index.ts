@@ -84,6 +84,7 @@ import { agentHookServer } from './agent-hooks/server'
 import { maybeAutoRenameBranchOnFirstWork } from './agent-hooks/first-work-branch-rename'
 import { setMigrationUnsupportedPtyListener } from './agent-hooks/migration-unsupported-pty-state'
 import {
+  clearProviderPtyState,
   getPtyIdForPaneKey,
   registerPaneKeyTeardownListener,
   getLocalPtyProvider,
@@ -1120,7 +1121,8 @@ app.whenReady().then(async () => {
     // to swap the in-process provider for the daemon-routed one. Capturing the
     // provider reference eagerly here would freeze the pre-daemon LocalPtyProvider
     // and defeat the teardown helper's prefix sweep (design §4.3 wire-up).
-    getLocalProvider: () => getLocalPtyProvider()
+    getLocalProvider: () => getLocalPtyProvider(),
+    onPtyStopped: clearProviderPtyState
   })
   runtime = runtimeService
   automations = new AutomationService(store, { claudeUsage, codexUsage })

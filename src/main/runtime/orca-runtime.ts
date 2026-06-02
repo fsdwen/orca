@@ -1419,6 +1419,7 @@ export class OrcaRuntimeService {
   private removeManagedWorktreeInFlight = new Map<string, RuntimeWorktreeRemovalInFlight>()
   private preservedBranchCleanupByWorktreeId = new Map<string, PreservedBranchCleanupTarget>()
   private readonly getLocalProviderFn: (() => IPtyProvider) | null
+  private readonly onPtyStopped: ((ptyId: string) => void) | null
   private accountServices: RuntimeAccountServices | null = null
   private commitMessageAgentEnv: CommitMessageAgentEnvironmentResolvers | null = null
   private automationService: AutomationService | null = null
@@ -1436,7 +1437,7 @@ export class OrcaRuntimeService {
   constructor(
     store: RuntimeStore | null = null,
     stats?: StatsCollector,
-    deps?: { getLocalProvider?: () => IPtyProvider }
+    deps?: { getLocalProvider?: () => IPtyProvider; onPtyStopped?: (ptyId: string) => void }
   ) {
     this.store = store
     if (stats) {
@@ -1450,6 +1451,7 @@ export class OrcaRuntimeService {
     // lazily via thunk so teardown always sees the currently-installed
     // provider (design §4.3 wire-up).
     this.getLocalProviderFn = deps?.getLocalProvider ?? null
+    this.onPtyStopped = deps?.onPtyStopped ?? null
   }
 
   getLocalProvider(): IPtyProvider | null {
@@ -9241,7 +9243,8 @@ export class OrcaRuntimeService {
           // would otherwise be swept; tear them down before hiding the workspace.
           await killAllProcessesForWorktree(removalTarget.id, {
             runtime: this,
-            localProvider
+            localProvider,
+            onPtyStopped: this.onPtyStopped ?? undefined
           }).catch((err) => {
             console.warn(`[worktree-teardown] failed for ${removalTarget.id}:`, err)
           })
@@ -9417,7 +9420,8 @@ export class OrcaRuntimeService {
         // closes the headless-CLI leak for confirmed-removable worktrees.
         await killAllProcessesForWorktree(removalTarget.id, {
           runtime: this,
-          localProvider
+          localProvider,
+          onPtyStopped: this.onPtyStopped ?? undefined
         })
           .then((r) => {
             const total = r.runtimeStopped + r.providerStopped + r.registryStopped

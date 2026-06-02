@@ -324,14 +324,22 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
   })
 
   describe('hasChildProcesses / getForegroundProcess', () => {
-    it('returns false for hasChildProcesses (stub)', async () => {
+    it('returns false for shell foreground processes', async () => {
       const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      vi.mocked(lastSubprocess.getForegroundProcess).mockReturnValue('bash')
       expect(await adapter.hasChildProcesses(id)).toBe(false)
     })
 
-    it('returns null for getForegroundProcess (stub)', async () => {
+    it('returns true for non-shell foreground processes', async () => {
       const { id } = await adapter.spawn({ cols: 80, rows: 24 })
-      expect(await adapter.getForegroundProcess(id)).toBeNull()
+      vi.mocked(lastSubprocess.getForegroundProcess).mockReturnValue('codex')
+      expect(await adapter.hasChildProcesses(id)).toBe(true)
+    })
+
+    it('returns the foreground process', async () => {
+      const { id } = await adapter.spawn({ cols: 80, rows: 24 })
+      vi.mocked(lastSubprocess.getForegroundProcess).mockReturnValue('codex')
+      expect(await adapter.getForegroundProcess(id)).toBe('codex')
     })
   })
 

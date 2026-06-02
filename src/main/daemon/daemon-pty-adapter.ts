@@ -18,6 +18,7 @@ import {
   type SessionInfo
 } from './types'
 import type { IPtyProvider, PtySpawnOptions, PtySpawnResult } from '../providers/types'
+import { isShellProcess } from '../../shared/agent-detection'
 
 export type DaemonPtyAdapterOptions = {
   socketPath: string
@@ -322,8 +323,11 @@ export class DaemonPtyAdapter implements IPtyProvider {
     // No flow control for daemon-backed terminals
   }
 
-  async hasChildProcesses(_id: string): Promise<boolean> {
-    return false
+  async hasChildProcesses(id: string): Promise<boolean> {
+    const foregroundProcess = await this.getForegroundProcess(id)
+    // Why: daemon-backed PTYs can host long-lived agents while the renderer is
+    // detached. Cleanup prompts must not treat those sessions like idle shells.
+    return foregroundProcess !== null && !isShellProcess(foregroundProcess)
   }
 
   async getForegroundProcess(id: string): Promise<string | null> {

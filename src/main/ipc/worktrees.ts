@@ -76,7 +76,7 @@ import {
 } from './filesystem-auth'
 import type { OrcaRuntimeService } from '../runtime/orca-runtime'
 import { killAllProcessesForWorktree } from '../runtime/worktree-teardown'
-import { getLocalPtyProvider } from './pty'
+import { clearProviderPtyState, getLocalPtyProvider } from './pty'
 import { removeWorktreeSymlinks } from './worktree-symlinks'
 import { track } from '../telemetry/client'
 import { getCohortAtEmit } from '../telemetry/cohort-classifier'
@@ -1037,7 +1037,8 @@ export function registerWorktreeHandlers(
           // remove step to close shells; sweep PTYs before dropping metadata.
           await killAllProcessesForWorktree(args.worktreeId, {
             runtime,
-            localProvider: getLocalPtyProvider()
+            localProvider: getLocalPtyProvider(),
+            onPtyStopped: clearProviderPtyState
           }).catch((err) => {
             console.warn(`[worktree-teardown] failed for ${args.worktreeId}:`, err)
           })
@@ -1238,7 +1239,8 @@ export function registerWorktreeHandlers(
           // git-level removal so shells cannot keep the directory busy.
           await killAllProcessesForWorktree(args.worktreeId, {
             runtime,
-            localProvider: getLocalPtyProvider()
+            localProvider: getLocalPtyProvider(),
+            onPtyStopped: clearProviderPtyState
           })
             .then((r) => {
               const total = r.runtimeStopped + r.providerStopped + r.registryStopped

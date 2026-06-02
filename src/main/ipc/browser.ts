@@ -1,6 +1,6 @@
 /* eslint-disable max-lines -- Why: browser IPC handlers must be registered together so the
    trust boundary (isTrustedBrowserRenderer) and handler teardown stay consistent. */
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, webContents } from 'electron'
 import { browserManager } from '../browser/browser-manager'
 import type { AgentBrowserBridge } from '../browser/agent-browser-bridge'
 import { browserSessionRegistry } from '../browser/browser-session-registry'
@@ -75,9 +75,20 @@ function resolvePendingRegistrations(registrationResolvers: Set<() => void> | un
   }
 }
 
+function isLiveBrowserWebContentsId(webContentsId: number | null | undefined): boolean {
+  if (webContentsId == null) {
+    return false
+  }
+  const guest = webContents.fromId(webContentsId)
+  return Boolean(guest && !guest.isDestroyed())
+}
+
 function hasRegisteredTabForWorktree(worktreeId: string): boolean {
-  for (const browserPageId of browserManager.getWebContentsIdByTabId().keys()) {
-    if (browserManager.getWorktreeIdForTab(browserPageId) === worktreeId) {
+  for (const [browserPageId, webContentsId] of browserManager.getWebContentsIdByTabId()) {
+    if (
+      browserManager.getWorktreeIdForTab(browserPageId) === worktreeId &&
+      isLiveBrowserWebContentsId(webContentsId)
+    ) {
       return true
     }
   }
@@ -85,7 +96,7 @@ function hasRegisteredTabForWorktree(worktreeId: string): boolean {
 }
 
 export function waitForTabRegistration(browserPageId: string, timeoutMs = 8_000): Promise<void> {
-  if (browserManager.getGuestWebContentsId(browserPageId) !== null) {
+  if (isLiveBrowserWebContentsId(browserManager.getGuestWebContentsId(browserPageId))) {
     return Promise.resolve()
   }
   let registrationResolvers = pendingTabRegistrations.get(browserPageId)
@@ -119,8 +130,10 @@ export function waitForWorktreeTabRegistration(
 }
 
 export function waitForAnyTabRegistration(timeoutMs = 8_000): Promise<void> {
-  if (browserManager.getWebContentsIdByTabId().size > 0) {
-    return Promise.resolve()
+  for (const webContentsId of browserManager.getWebContentsIdByTabId().values()) {
+    if (isLiveBrowserWebContentsId(webContentsId)) {
+      return Promise.resolve()
+    }
   }
   return waitForRegistrationSet(pendingAnyTabRegistrations, timeoutMs, () => {})
 }
