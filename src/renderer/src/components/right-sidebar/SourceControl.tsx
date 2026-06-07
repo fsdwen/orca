@@ -1774,7 +1774,9 @@ function SourceControlInner(): React.JSX.Element {
         return
       }
 
-      focusTerminalTabSurface(result.tabId)
+      if (result.tabId) {
+        focusTerminalTabSurface(result.tabId)
+      }
       toast.success('Started an AI agent for the conflicts.')
     } finally {
       setIsLaunchingConflictAgent(false)
@@ -1847,7 +1849,9 @@ function SourceControlInner(): React.JSX.Element {
           return false
         }
 
-        focusTerminalTabSurface(result.tabId)
+        if (result.tabId) {
+          focusTerminalTabSurface(result.tabId)
+        }
         toast.success('Started an AI agent for the commit failure.')
         return true
       } finally {

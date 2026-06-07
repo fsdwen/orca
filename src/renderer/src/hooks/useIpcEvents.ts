@@ -746,7 +746,10 @@ export function useIpcEvents(): void {
         ...(setup ? { setup } : {}),
         ...(startup ? { startup } : {}),
         ...(defaultTabs ? { defaultTabs } : {}),
-        ...(!existedBeforeFetch && existsAfterFetch ? { sidebarRevealBehavior: 'auto' } : {})
+        ...(!existedBeforeFetch && existsAfterFetch ? { sidebarRevealBehavior: 'auto' } : {}),
+        // Why: this activation already came from the host runtime event stream.
+        // Echoing it back as worktree.activate can create a selection loop.
+        notifyHostRuntime: false
       })
     }
 
