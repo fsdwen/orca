@@ -215,6 +215,32 @@ describe('ClaudeHookService.install', () => {
       }
     }
   )
+
+  // Why: the launcher must stay PowerShell-encoded for Git Bash, but the hook
+  // POST inside the .cmd should use curl.exe so each hook spawns one
+  // interpreter, not two. Posting via a second PowerShell was the slow path.
+  it.skipIf(process.platform !== 'win32')(
+    'posts from the managed .cmd via curl.exe, not a second PowerShell',
+    () => {
+      const tmpHome = mkdtempSync(join(tmpdir(), 'orca-claude-curl-'))
+      vi.stubEnv('HOME', tmpHome)
+      vi.stubEnv('USERPROFILE', tmpHome)
+      try {
+        expect(new ClaudeHookService().install().state).toBe('installed')
+        const script = readFileSync(
+          join(tmpHome, '.orca', 'agent-hooks', CLAUDE_SCRIPT_FILE_NAME),
+          'utf-8'
+        )
+        expect(script).toContain('%SystemRoot%\\System32\\curl.exe')
+        expect(script).toContain('--data-urlencode "payload@-"')
+        expect(script).toContain('/hook/claude')
+        expect(script).not.toMatch(/Invoke-WebRequest/i)
+      } finally {
+        vi.unstubAllEnvs()
+        rmSync(tmpHome, { recursive: true, force: true })
+      }
+    }
+  )
 })
 
 describe('ClaudeHookService.installRemote', () => {

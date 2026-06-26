@@ -6,7 +6,7 @@ import type { AgentHookInstallState, AgentHookInstallStatus } from '../../shared
 import {
   buildManagedCommandHook,
   createManagedCommandMatcher,
-  buildWindowsAgentHookPostCommand,
+  buildWindowsAgentHookCurlPostCommand,
   getSharedManagedScriptPath,
   hookDefinitionHasManagedCommand,
   MANAGED_HOOK_TIMEOUT_SECONDS,
@@ -130,10 +130,20 @@ function getManagedScriptPath(): string {
   return getSharedManagedScriptPath(getManagedScriptFileName())
 }
 
+// Why: a Windows script path is cmd-safe when it holds only characters cmd.exe
+// passes through untouched (drive letter, backslash, dot, dash, underscore).
+// Codex runs hooks as `cmd.exe /C <command>` and forwards our string verbatim
+// when it has no spaces/quotes, so a bare path then launches with zero shell
+// startup. Spaces or cmd metacharacters (`% ^ & ! ( )` etc.) force the encoded
+// PowerShell launcher (#6078), which hides the path in base64. `~` is allowed
+// because 8.3 short paths (e.g. `RUNNER~1`) are cmd-safe and common.
+const WINDOWS_CMD_SAFE_PATH = /^[A-Za-z0-9_.:\\~-]+$/
+
 function getManagedCommand(scriptPath: string): string {
-  return process.platform === 'win32'
-    ? wrapWindowsHookCommand(scriptPath)
-    : wrapPosixHookCommand(scriptPath)
+  if (process.platform !== 'win32') {
+    return wrapPosixHookCommand(scriptPath)
+  }
+  return WINDOWS_CMD_SAFE_PATH.test(scriptPath) ? scriptPath : wrapWindowsHookCommand(scriptPath)
 }
 
 function getSystemConfigPath(): string {
@@ -697,7 +707,7 @@ function getManagedScript(target: 'local' | 'posix' = 'local'): string {
       'if "%ORCA_AGENT_HOOK_PORT%"=="" exit /b 0',
       'if "%ORCA_AGENT_HOOK_TOKEN%"=="" exit /b 0',
       'if "%ORCA_PANE_KEY%"=="" exit /b 0',
-      buildWindowsAgentHookPostCommand('codex'),
+      buildWindowsAgentHookCurlPostCommand('codex'),
       'exit /b 0',
       ''
     ].join('\r\n')

@@ -176,6 +176,30 @@ export function buildWindowsAgentHookPostCommand(source: AgentHookSource): strin
   ].join('\r\n')
 }
 
+// Why: status hooks fire up to 6× per turn; spawning PowerShell per post adds
+// ~300ms of interpreter startup each, which Codex 0.140's synchronous "Running
+// <event> hook" rows make visible. curl.exe (Windows 10 1803+) posts the same
+// form fields as the POSIX hook and reads the raw payload from stdin via
+// `--data-urlencode payload@-`, so UTF-8 (e.g. CJK prompts) survives byte-for-
+// byte without the code-page translation that forced the PowerShell post.
+export function buildWindowsAgentHookCurlPostCommand(source: AgentHookSource): string {
+  return [
+    '"%SystemRoot%\\System32\\curl.exe" -sS -X POST',
+    `"http://127.0.0.1:%ORCA_AGENT_HOOK_PORT%/hook/${source}"`,
+    '--connect-timeout 0.5 --max-time 1.5',
+    '-H "Content-Type: application/x-www-form-urlencoded"',
+    '-H "X-Orca-Agent-Hook-Token: %ORCA_AGENT_HOOK_TOKEN%"',
+    '--data-urlencode "paneKey=%ORCA_PANE_KEY%"',
+    '--data-urlencode "tabId=%ORCA_TAB_ID%"',
+    '--data-urlencode "launchToken=%ORCA_AGENT_LAUNCH_TOKEN%"',
+    '--data-urlencode "worktreeId=%ORCA_WORKTREE_ID%"',
+    '--data-urlencode "env=%ORCA_AGENT_HOOK_ENV%"',
+    '--data-urlencode "version=%ORCA_AGENT_HOOK_VERSION%"',
+    '--data-urlencode "payload@-"',
+    '>nul 2>&1'
+  ].join(' ')
+}
+
 export function removeManagedCommands(
   definitions: HookDefinition[],
   isManagedCommand: (command: string | undefined) => boolean

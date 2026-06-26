@@ -10,9 +10,12 @@ import {
   symlinkSync,
   writeFileSync
 } from 'fs'
-import { tmpdir } from 'os'
+import { homedir, tmpdir } from 'os'
 import type * as Os from 'os'
 import { join } from 'path'
+import { spawn } from 'child_process'
+import { createServer } from 'http'
+import type { AddressInfo } from 'net'
 import { createManagedCommandMatcher, wrapPosixHookCommand } from '../agent-hooks/installer-utils'
 import { computeTrustedHash, upsertHookTrustEntriesInContent } from './config-toml-trust'
 
@@ -207,6 +210,102 @@ describe('CodexHookService', () => {
         }
       } finally {
         rmSync(spaceHome, { recursive: true, force: true })
+      }
+    }
+  )
+
+  // Why: the common case — a profile path with no spaces or cmd metacharacters
+  // — must launch the .cmd directly with no PowerShell, restoring the pre-#6078
+  // speed that Codex 0.140's synchronous "Running <event> hook" rows expose.
+  it.skipIf(process.platform !== 'win32')(
+    'launches the managed .cmd directly when the profile path is cmd-safe',
+    () => {
+      const status = new CodexHookService().install()
+      expect(status.state).toBe('installed')
+
+      const managedCodexHome = join(userDataDir, 'codex-runtime-home', 'home')
+      const hooksConfig = JSON.parse(
+        readFileSync(join(managedCodexHome, 'hooks.json'), 'utf-8')
+      ) as { hooks: Record<string, { hooks?: { command?: string }[] }[]> }
+
+      // Why: the temp home is normally cmd-safe; guard so a runner whose tmpdir
+      // holds an exotic character still asserts the correct (fallback) branch.
+      const command = hooksConfig.hooks.Stop?.[0]?.hooks?.[0]?.command ?? ''
+      const cmdSafe = /^[A-Za-z0-9_.:\\~-]+$/.test(join(tmpHome, '.orca', 'agent-hooks'))
+      if (cmdSafe) {
+        expect(command).not.toMatch(/powershell/i)
+        expect(command).toMatch(/\\agent-hooks\\codex-hook\.cmd$/)
+      } else {
+        expect(command).toMatch(/^powershell -NoProfile/)
+      }
+    }
+  )
+
+  // Why: end-to-end proof the curl-based managed script posts the hook to the
+  // local listener with UTF-8 (CJK) payloads and a worktreeId containing spaces
+  // and a `&` — the cases the replaced PowerShell post and form quoting handled.
+  it.skipIf(process.platform !== 'win32')(
+    'posts hook payloads via the curl-based managed script preserving UTF-8 and spaced metadata',
+    async () => {
+      new CodexHookService().install()
+      const scriptPath = join(homedir(), '.orca', 'agent-hooks', 'codex-hook.cmd')
+      expect(existsSync(scriptPath)).toBe(true)
+
+      // Why: resolve when the listener has fully read the hook POST. spawnSync
+      // would block the event loop and starve this handler, so the child is
+      // spawned asynchronously while the server drains the request concurrently.
+      let resolveReceived: (value: { headers: Record<string, unknown>; body: string }) => void
+      const receivedPromise = new Promise<{ headers: Record<string, unknown>; body: string }>(
+        (resolve) => {
+          resolveReceived = resolve
+        }
+      )
+      const server = createServer((req, res) => {
+        const chunks: Buffer[] = []
+        req.on('data', (c: Buffer) => chunks.push(c))
+        req.on('end', () => {
+          res.end('ok')
+          resolveReceived({ headers: req.headers, body: Buffer.concat(chunks).toString('utf-8') })
+        })
+      })
+      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+      const port = (server.address() as AddressInfo).port
+
+      try {
+        const payload = JSON.stringify({ prompt: '你好世界', hook_event_name: 'UserPromptSubmit' })
+        // Why: this suite may run inside an Orca-launched terminal whose env
+        // already carries ORCA_AGENT_HOOK_ENDPOINT/PORT/TOKEN. The managed
+        // script sources that endpoint file, so leave it out or the hook posts
+        // to the live Orca instead of this test's listener.
+        const cleanEnv = { ...process.env }
+        for (const key of Object.keys(cleanEnv)) {
+          if (key.startsWith('ORCA_')) {
+            delete cleanEnv[key]
+          }
+        }
+        const child = spawn('cmd.exe', ['/d', '/c', scriptPath], {
+          env: {
+            ...cleanEnv,
+            ORCA_AGENT_HOOK_PORT: String(port),
+            ORCA_AGENT_HOOK_TOKEN: 'tok123',
+            ORCA_PANE_KEY: '42:leaf-abc',
+            ORCA_TAB_ID: '42',
+            ORCA_WORKTREE_ID: 'C:\\work trees\\my repo & co',
+            ORCA_AGENT_HOOK_VERSION: '1'
+          }
+        })
+        child.stdin.end(payload)
+        const exitCode = await new Promise<number>((resolve) => child.on('close', resolve))
+        expect(exitCode).toBe(0)
+
+        const received = await receivedPromise
+        const params = new URLSearchParams(received.body)
+        expect(received.headers['x-orca-agent-hook-token']).toBe('tok123')
+        expect(params.get('paneKey')).toBe('42:leaf-abc')
+        expect(params.get('worktreeId')).toBe('C:\\work trees\\my repo & co')
+        expect(JSON.parse(params.get('payload') ?? '{}').prompt).toBe('你好世界')
+      } finally {
+        await new Promise<void>((resolve) => server.close(() => resolve()))
       }
     }
   )
