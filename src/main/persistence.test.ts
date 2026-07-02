@@ -1106,6 +1106,31 @@ describe('Store', () => {
     }
   })
 
+  it('drops the legacy SSH relay default when updating targets', async () => {
+    const store = await createStore()
+    store.addSshTarget({
+      id: 'ssh-update-legacy-default',
+      label: 'Update legacy default',
+      host: 'update-default.example.com',
+      port: 22,
+      username: 'dev'
+    })
+
+    const updated = store.updateSshTarget('ssh-update-legacy-default', {
+      relayGracePeriodSeconds: LEGACY_DEFAULT_SSH_RELAY_GRACE_PERIOD_SECONDS
+    })
+
+    expect(updated).not.toHaveProperty('relayGracePeriodSeconds')
+    expect(store.getSshTarget('ssh-update-legacy-default')).not.toHaveProperty(
+      'relayGracePeriodSeconds'
+    )
+
+    store.flush()
+    const persisted = readDataFile() as { sshTargets?: Record<string, unknown>[] }
+    const onDisk = persisted.sshTargets?.find((t) => t.id === 'ssh-update-legacy-default')
+    expect(onDisk).not.toHaveProperty('relayGracePeriodSeconds')
+  })
+
   it('persists the SSH target source field through add, update, and disk round-trip', async () => {
     const store = await createStore()
     store.addSshTarget({
@@ -1132,6 +1157,45 @@ describe('Store', () => {
     const onDisk = persisted.sshTargets?.find((t) => t.id === 'ssh-src-1')
     expect(onDisk?.source).toBe('ssh-config')
     expect(onDisk?.port).toBe(2222)
+  })
+
+  it('persists only explicit SSH connection reuse opt-outs', async () => {
+    const store = await createStore()
+    store.addSshTarget({
+      id: 'ssh-reuse-default',
+      label: 'Default reuse',
+      host: 'default.example.com',
+      port: 22,
+      username: 'dev',
+      systemSshConnectionReuse: true
+    })
+    store.addSshTarget({
+      id: 'ssh-reuse-off',
+      label: 'Reuse disabled',
+      host: 'legacy.example.com',
+      port: 22,
+      username: 'dev',
+      systemSshConnectionReuse: false
+    })
+
+    expect(store.getSshTarget('ssh-reuse-default')).not.toHaveProperty('systemSshConnectionReuse')
+    expect(store.getSshTarget('ssh-reuse-off')?.systemSshConnectionReuse).toBe(false)
+
+    store.flush()
+    const persistedBeforeUpdate = readDataFile() as { sshTargets?: Record<string, unknown>[] }
+    const defaultTarget = persistedBeforeUpdate.sshTargets?.find(
+      (t) => t.id === 'ssh-reuse-default'
+    )
+    const disabledTarget = persistedBeforeUpdate.sshTargets?.find((t) => t.id === 'ssh-reuse-off')
+    expect(defaultTarget).not.toHaveProperty('systemSshConnectionReuse')
+    expect(disabledTarget?.systemSshConnectionReuse).toBe(false)
+
+    const updated = store.updateSshTarget('ssh-reuse-off', { systemSshConnectionReuse: undefined })
+    expect(updated).not.toHaveProperty('systemSshConnectionReuse')
+    store.flush()
+    const persisted = readDataFile() as { sshTargets?: Record<string, unknown>[] }
+    const updatedTarget = persisted.sshTargets?.find((t) => t.id === 'ssh-reuse-off')
+    expect(updatedTarget).not.toHaveProperty('systemSshConnectionReuse')
   })
 
   it('upserts ~/.ssh/config through the real store: rotated port updates in place and persists', async () => {

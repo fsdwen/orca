@@ -6400,7 +6400,13 @@
           "9518545cb6": "Add Target",
           "a62b4cb39a": "Save Changes",
           "29af933cd5": "New SSH Target",
-          "f2331ce599": "Edit SSH Target"
+          "f2331ce599": "Edit SSH Target",
+          "7c13f58c91": "Until reset",
+          "55c56cf2c7": "Timeout after disconnect (seconds)",
+          "4a342f44c1": "Advanced Connection",
+          "e9609ddca6": "Proxy, jump host, and connection reuse",
+          "8c922dffba": "Reuse SSH connection for faster setup",
+          "53e9aabfc0": "Uses OpenSSH multiplexing when available. Turn off for hosts with custom SSH restrictions."
         },
         "TasksPane": {
           "3a72b9745e": "Choose which task providers appear in the Tasks page and sidebar shortcuts.",
