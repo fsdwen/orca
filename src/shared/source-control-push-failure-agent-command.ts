@@ -1,6 +1,6 @@
 import { buildSourceControlRecoveryAgentCommandInput } from './source-control-recovery-agent-command'
 
-export function buildCommitFailureAgentCommandInput({
+export function buildPushFailureAgentCommandInput({
   promptOverride,
   commandInputTemplate,
   basePrompt
@@ -10,7 +10,7 @@ export function buildCommitFailureAgentCommandInput({
   basePrompt: string
 }): string {
   return buildSourceControlRecoveryAgentCommandInput({
-    actionId: 'fixCommitFailure',
+    actionId: 'fixPushFailure',
     promptOverride,
     commandInputTemplate,
     basePrompt

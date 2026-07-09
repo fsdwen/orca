@@ -13,12 +13,12 @@ type SourceControlAiLaunchStoreSnapshot = Pick<
   'settings' | 'ensureDetectedAgents' | 'ensureRemoteDetectedAgents'
 >
 
-export async function launchCommitFailureAgentWithDefault({
+export async function launchPushFailureAgentWithDefault({
   activeWorktreeId,
   activeGroupId,
   activeSourceControlLaunchPlatform,
   sourceRepoConnectionId,
-  commitFailureRecoveryPrompt,
+  pushFailureRecoveryPrompt,
   promptOverride,
   getLaunchActionRecipe,
   getStoreState
@@ -27,7 +27,7 @@ export async function launchCommitFailureAgentWithDefault({
   activeGroupId: string | null | undefined
   activeSourceControlLaunchPlatform: NodeJS.Platform
   sourceRepoConnectionId?: string | null
-  commitFailureRecoveryPrompt: string | null
+  pushFailureRecoveryPrompt: string | null
   promptOverride?: string
   getLaunchActionRecipe: (actionId: SourceControlLaunchActionId) => SourceControlActionRecipe
   getStoreState: () => SourceControlAiLaunchStoreSnapshot
@@ -37,11 +37,11 @@ export async function launchCommitFailureAgentWithDefault({
     activeGroupId,
     activeSourceControlLaunchPlatform,
     sourceRepoConnectionId,
-    actionId: 'fixCommitFailure',
-    basePrompt: commitFailureRecoveryPrompt,
+    actionId: 'fixPushFailure',
+    basePrompt: pushFailureRecoveryPrompt,
     promptOverride,
     getLaunchActionRecipe,
     getStoreState,
-    copy: getDefaultSourceControlRecoveryLaunchCopy('commit')
+    copy: getDefaultSourceControlRecoveryLaunchCopy('push')
   })
 }

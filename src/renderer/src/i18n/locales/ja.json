@@ -2565,7 +2565,10 @@
             "connectFailed": "SSH 接続に失敗しました",
             "title": "SSH 接続が必要です",
             "connectingButton": "接続中...",
-            "connectButton": "接続"
+            "connectButton": "接続",
+            "removedTitle": "SSH host removed",
+            "removedBody": "The SSH host for this workspace was removed, so it can no longer connect. Remove the workspace to clear it — remote files are left untouched.",
+            "removeWorkspaceButton": "Remove workspace"
           }
         }
       },
@@ -3686,7 +3689,8 @@
           "d36883e046": "キャンセル",
           "8c097ef04e": "Orca から。それはまだディスク上にあります。",
           "e62415c3d0": "これは削除するだけです",
-          "b79b39d865": "プロジェクトの削除"
+          "b79b39d865": "プロジェクトの削除",
+          "fromOrcaSsh": "from Orca. Its files stay on {{value0}} — re-add that SSH host to recover it."
         },
         "ScrollToCurrentWorkspaceToolbarButton": {
           "23989bb663": "アクティブなワークスペースを表示する"
@@ -4402,7 +4406,16 @@
           "5e6f7a8b9c": "This removes the saved SSH host and its credentials from this computer. Remote files are not deleted.",
           "6f7a8b9c0d": "キャンセル",
           "7a8b9c0d1e": "Open settings",
-          "8b9c0d1e2f": "ホストを削除"
+          "8b9c0d1e2f": "ホストを削除",
+          "workspacesFailed": "Could not remove {{count}} of this host’s workspaces. The host was kept so you can retry.",
+          "oneWorkspace": "1 workspace",
+          "manyWorkspaces": "{{count}} workspaces",
+          "hostHasWorkspacesDefault": "Removes {{value0}} and its credentials from this computer. Its {{value1}} stay in Orca — remote files are not touched.",
+          "alsoDeleteRemote": "Also delete these {{value0}} on {{value1}}",
+          "alsoForgetLocal": "Also remove these {{value0}} from Orca",
+          "advanced": "Advanced",
+          "alsoDeleteRemoteHint": "Permanently deletes the remote Git worktrees and their branches. Cannot be undone.",
+          "alsoForgetLocalHint": "Clears them from Orca only. Remote files, worktrees, and branches are left untouched."
         },
         "HostRenameDialog": {
           "1a2b3c4d5e": "Rename host",
@@ -4515,6 +4528,16 @@
           "importing": "インポート中...",
           "importSshConfig": "~/.ssh/config をインポートします",
           "sshPersistenceDefault": "このホスト上のリモートターミナルは、終了するかリレーをリセットするまで動作し続けます。"
+        },
+        "ForgetSshWorkspaceDialog": {
+          "reconnectFailed": "Reconnection failed",
+          "forgetBody": "Removes this workspace from Orca only. Files, the Git worktree, and branches on {{host}} are left untouched.",
+          "title": "Delete “{{name}}”?",
+          "disconnectedBody": "The SSH host for this workspace is not connected. Reconnect to delete it on the remote too, or remove it from Orca only.",
+          "ghostBody": "{{host}} is no longer a saved SSH host, so this workspace is no longer connected to a live host. It can only be removed from Orca — files and branches on the remote are left untouched.",
+          "cancel": "Cancel",
+          "forget": "Remove from Orca",
+          "reconnectAndDelete": "Reconnect & Delete"
         }
       },
       "shared": {
@@ -8379,7 +8402,8 @@
                   "customCommand": "カスタムコマンド",
                   "supportedAgents": "このレシピでサポートされている agent: {{value0}}。",
                   "unsupportedSavedAgent": "{{value0}} はこのテキスト生成レシピを実行できません。以下からサポートされている agent のいずれかを選択してください。",
-                  "resolveComments": "選択した未解決の PR または MR コメントから agent を開始します。"
+                  "resolveComments": "選択した未解決の PR または MR コメントから agent を開始します。",
+                  "fixPushFailure": "Start an agent when a pre-push hook or git push fails."
                 }
               }
             }
@@ -9251,7 +9275,22 @@
             "d2b9g4f315": "{{value1}}より{{value0}}commits 遅れています",
             "e9c2a5d416": "{{value0}}と同じ状態",
             "4b4a7de138": "Open review page in browser",
-            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR."
+            "createPrIntentCommitBlockedSummary": "Commit blocked: {{value0}} Fix the issue, then retry Create PR.",
+            "pushRecovery": {
+              "4b37ae99b0": "Start the default AI agent to fix this push failure",
+              "30b8d4f181": "Fix push failure with AI",
+              "dd43c47089": "Choose an agent for this push failure",
+              "ec7bfced55": "Choose agent to fix push failure",
+              "9e5ccd00aa": "Push failure context unavailable",
+              "054ead86b1": "Fix Push Failure With AI",
+              "15b7f210d7": "Choose the agent and edit the full command input before launch.",
+              "011f9713fc": "Push blocked",
+              "60bd988f0b": "AI Fix",
+              "03d238218c": "Details",
+              "a9bf7c171a": "Push Failed",
+              "834cb3f23d": "Fix with AI",
+              "783a808870": "Close"
+            }
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",
@@ -9499,6 +9538,35 @@
                       "4f4e0418a0": "agent プロンプトを構築できませんでした。",
                       "216f762bd7": "ワークスペース接続を解決できません。"
                     }
+                  }
+                },
+                "push": {
+                  "failure": {
+                    "launch": {
+                      "216f762bd7": "Unable to resolve the workspace connection.",
+                      "4f4e0418a0": "Could not build the agent prompt.",
+                      "f2b47026e8": "Push failure prompt is empty. Update Source Control AI settings.",
+                      "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                      "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                      "5540ff50cc": "Could not build the agent launch command.",
+                      "a8b97d2318": "Started an AI agent for the push failure."
+                    }
+                  }
+                },
+                "recovery": {
+                  "launch": {
+                    "4f4e0418a0": "Could not build the agent prompt.",
+                    "push": {
+                      "empty": "Push failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "commit": {
+                      "empty": "Commit failure prompt is empty. Update Source Control AI settings."
+                    },
+                    "d481ab22f9": "Saved AI agent is unavailable. Use Customize launch to choose another agent.",
+                    "9bbd9077a2": "No enabled AI agents. Configure agents in Settings.",
+                    "5540ff50cc": "Could not build the agent launch command.",
+                    "216f762bd7": "Unable to resolve the workspace connection.",
+                    "success": "Started an AI agent for the {{value0}} failure."
                   }
                 }
               },
