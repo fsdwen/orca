@@ -53,6 +53,7 @@ import {
   buildAgentPromptPasteBytes
 } from '../../shared/agent-prompt-injection'
 import { gitExecFileAsync, gitSpawn } from '../git/runner'
+import { runWithGitReadCacheInvalidation } from '../git/status'
 import {
   cleanupClaimedCloneTarget,
   claimCloneTarget,
@@ -11470,12 +11471,14 @@ export class OrcaRuntimeService {
 
     try {
       await previous
-      return await this.cloneRepoAfterPathLock(
-        trimmedUrl,
-        trimmedDestination,
-        clonePath,
-        clonePathKey,
-        executionHostId
+      return await runWithGitReadCacheInvalidation(() =>
+        this.cloneRepoAfterPathLock(
+          trimmedUrl,
+          trimmedDestination,
+          clonePath,
+          clonePathKey,
+          executionHostId
+        )
       )
     } finally {
       release()
