@@ -10,6 +10,7 @@ const {
   removeWorktreeMock,
   resolveLocalGitUsernameMock,
   getDefaultBaseRefMock,
+  resolveDefaultBaseRefWithLocalGitMock,
   resolveDefaultBaseRefViaExecMock,
   getBranchConflictKindMock,
   getPRForBranchMock,
@@ -38,6 +39,7 @@ const {
   removeWorktreeMock: vi.fn(),
   resolveLocalGitUsernameMock: vi.fn(),
   getDefaultBaseRefMock: vi.fn(),
+  resolveDefaultBaseRefWithLocalGitMock: vi.fn(),
   resolveDefaultBaseRefViaExecMock: vi.fn(),
   getBranchConflictKindMock: vi.fn(),
   getPRForBranchMock: vi.fn(),
@@ -84,6 +86,7 @@ vi.mock('../git/runner', () => ({
 
 vi.mock('../git/repo', () => ({
   getDefaultBaseRef: getDefaultBaseRefMock,
+  resolveDefaultBaseRefWithLocalGit: resolveDefaultBaseRefWithLocalGitMock,
   resolveDefaultBaseRefViaExec: resolveDefaultBaseRefViaExecMock,
   getBranchConflictKind: getBranchConflictKindMock
 }))
@@ -164,6 +167,7 @@ describe('registerWorktreeHandlers – Windows path handling', () => {
     removeWorktreeMock.mockReset()
     resolveLocalGitUsernameMock.mockReset()
     getDefaultBaseRefMock.mockReset()
+    resolveDefaultBaseRefWithLocalGitMock.mockReset()
     resolveDefaultBaseRefViaExecMock.mockReset()
     getBranchConflictKindMock.mockReset()
     getPRForBranchMock.mockReset()
@@ -230,6 +234,7 @@ describe('registerWorktreeHandlers – Windows path handling', () => {
     store.setWorktreeMeta.mockReturnValue({})
     resolveLocalGitUsernameMock.mockResolvedValue('')
     getDefaultBaseRefMock.mockReturnValue('origin/main')
+    resolveDefaultBaseRefWithLocalGitMock.mockResolvedValue('origin/main')
     resolveDefaultBaseRefViaExecMock.mockResolvedValue('origin/main')
     getBranchConflictKindMock.mockResolvedValue(null)
     getPRForBranchMock.mockResolvedValue(null)

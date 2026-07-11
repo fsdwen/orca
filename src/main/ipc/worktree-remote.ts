@@ -27,7 +27,11 @@ import type {
 import { getPRForBranch } from '../github/client'
 import { listWorktrees, addWorktree, addSparseWorktree } from '../git/worktree'
 import type { AddWorktreeOptions, AddWorktreeResult } from '../git/worktree'
-import { getBranchConflictKind, resolveDefaultBaseRefViaExec } from '../git/repo'
+import {
+  getBranchConflictKind,
+  resolveDefaultBaseRefViaExec,
+  resolveDefaultBaseRefWithLocalGit
+} from '../git/repo'
 import { resolveLocalGitUsername } from '../git/git-username'
 import { hasCommitObjectViaGitExec } from '../git/commit-object-ref'
 import { resolveWorktreeCreateBase } from '../worktree-create-base'
@@ -1999,8 +2003,7 @@ export async function createLocalWorktree(
   const baseBranch = await resolveWorktreeCreateBase({
     requestedBaseBranch: args.baseBranch,
     repoWorktreeBaseRef: repo.worktreeBaseRef,
-    resolveDefaultBaseRef: () =>
-      resolveDefaultBaseRefViaExec((argv) => gitExecFileAsync(argv, localGitExecOptions)),
+    resolveDefaultBaseRef: () => resolveDefaultBaseRefWithLocalGit(localGitExecOptions),
     isBaseUsable: async (baseBranchCandidate) => {
       if (runtime) {
         const remoteTrackingBase = await runtime.resolveRemoteTrackingBase(

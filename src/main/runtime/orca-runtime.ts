@@ -600,7 +600,6 @@ import type {
 } from '../../shared/github-project-types'
 import {
   getBaseRefDefault,
-  getDefaultBaseRef,
   getDefaultRemote,
   getBranchConflictKind,
   isGitRepo,
@@ -611,6 +610,7 @@ import {
   parseAndFilterSearchRefDetails,
   parseRemoteCount,
   resolveDefaultBaseRefViaExec,
+  resolveDefaultBaseRefWithLocalGit,
   buildSearchBaseRefsArgv,
   isForEachRefExcludeUnsupportedError,
   mergeBaseRefSearchResultGroups,
@@ -14264,8 +14264,8 @@ export class OrcaRuntimeService {
       repoWorktreeBaseRef: repo.worktreeBaseRef,
       resolveDefaultBaseRef: () =>
         hasLocalWorktreeGitOptions
-          ? resolveDefaultBaseRefViaExec((argv) => gitExecFileAsync(argv, localGitExecOptions))
-          : Promise.resolve(getDefaultBaseRef(repo.path)),
+          ? resolveDefaultBaseRefWithLocalGit(localGitExecOptions)
+          : getBaseRefDefault(repo.path),
       isBaseUsable: async (baseBranchCandidate) => {
         const remoteTrackingBase = await this.resolveRemoteTrackingBase(
           repo.path,
@@ -14296,10 +14296,8 @@ export class OrcaRuntimeService {
       }
     })
     if (!baseBranch) {
-      // Why: getDefaultBaseRef returns null when no suitable ref exists.
-      // Don't fabricate 'origin/main' — passing it to addWorktree would
-      // produce an opaque git failure. Surface a clear error so the CLI
-      // caller can pick an explicit --base ref.
+      // Why: a null default means no suitable ref exists; fail clearly instead
+      // of handing Git a fabricated origin/main ref.
       throw new Error(
         'Could not resolve a default base ref for this repo. Pass an explicit --base and try again.'
       )
