@@ -11,7 +11,7 @@ import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
 import { HideSidebarMenu } from './sidebar-nav-controls'
-import { useTranslation } from 'react-i18next'
+import { i18n, translate } from '@/i18n/i18n'
 
 export { getSetupGuideSidebarEntryReady, shouldShowSetupGuideEntry } from './SetupGuideSidebarEntry'
 
@@ -33,8 +33,19 @@ export function shouldShowAutomationsButton(
   return settings?.showAutomationsButton !== false
 }
 
+function subscribeToI18nLanguage(onLanguageChange: () => void): () => void {
+  i18n.on('languageChanged', onLanguageChange)
+  return () => i18n.off('languageChanged', onLanguageChange)
+}
+
+function getI18nLanguage(): string {
+  return i18n.language
+}
+
 const SidebarNav = React.memo(function SidebarNav() {
-  const { t } = useTranslation()
+  // Why: useSyncExternalStore rechecks after subscribing, so a startup
+  // language change cannot race this memoized component's listener setup.
+  React.useSyncExternalStore(subscribeToI18nLanguage, getI18nLanguage, getI18nLanguage)
   const worktreePaletteShortcutCombos = useShortcutKeyComboDetails('worktree.palette')
   const openAutomationsPage = useAppStore((s) => s.openAutomationsPage)
   const openActivityPage = useAppStore((s) => s.openActivityPage)
@@ -86,7 +97,7 @@ const SidebarNav = React.memo(function SidebarNav() {
                 strokeWidth={automationsActive ? 2.25 : 1.75}
               />
               <span className="flex-1">
-                {t('auto.components.sidebar.SidebarNav.f323383e9a', 'Automations')}
+                {translate('auto.components.sidebar.SidebarNav.f323383e9a', 'Automations')}
               </span>
             </button>
           </ContextMenuTrigger>
@@ -113,7 +124,7 @@ const SidebarNav = React.memo(function SidebarNav() {
             strokeWidth={activityActive ? 2.25 : 1.75}
           />
           <span className="flex-1">
-            {t('auto.components.sidebar.SidebarNav.9c95e1ce91', 'Agents')}
+            {translate('auto.components.sidebar.SidebarNav.9c95e1ce91', 'Agents')}
           </span>
           {activityUnreadCount > 0 ? (
             <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
@@ -147,11 +158,11 @@ const SidebarNav = React.memo(function SidebarNav() {
                 strokeWidth={mobileActive ? 2.25 : 1.75}
               />
               <span className="flex-1">
-                {t('auto.components.sidebar.SidebarNav.1b5c41caee', 'Orca Mobile')}
+                {translate('auto.components.sidebar.SidebarNav.1b5c41caee', 'Orca Mobile')}
               </span>
               {mobileOnboardingBadge.visible ? (
                 <span className="rounded-full bg-primary px-1.5 py-px text-[10px] font-semibold text-primary-foreground">
-                  {t('auto.components.sidebar.SidebarNav.c86d83b5c3', 'New')}
+                  {translate('auto.components.sidebar.SidebarNav.c86d83b5c3', 'New')}
                 </span>
               ) : null}
             </button>
@@ -162,7 +173,7 @@ const SidebarNav = React.memo(function SidebarNav() {
       <button
         type="button"
         onClick={() => openModal('worktree-palette')}
-        aria-label={t(
+        aria-label={translate(
           'auto.components.sidebar.SidebarNav.0c3395fd32',
           'Search worktrees and browser tabs'
         )}
@@ -173,7 +184,7 @@ const SidebarNav = React.memo(function SidebarNav() {
           strokeWidth={1.75}
         />
         <span className="min-w-0 flex-1 truncate">
-          {t('auto.components.sidebar.SidebarNav.80611a8b10', 'Search')}
+          {translate('auto.components.sidebar.SidebarNav.80611a8b10', 'Search')}
         </span>
         <span className="pointer-events-none ml-1.5 hidden shrink-0 items-center gap-1.5 group-hover:inline-flex group-focus-within:inline-flex">
           {worktreePaletteShortcutCombos.map((combo) => (
