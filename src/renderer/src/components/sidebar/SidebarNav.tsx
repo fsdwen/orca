@@ -1,5 +1,6 @@
 import React from 'react'
 import { Bell, CalendarClock, Search, Smartphone } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/store'
 import { cn } from '@/lib/utils'
 import type { GlobalSettings } from '../../../../shared/types'
@@ -11,7 +12,7 @@ import { ContextMenu, ContextMenuTrigger } from '@/components/ui/context-menu'
 import { SetupGuideSidebarEntry } from './SetupGuideSidebarEntry'
 import { SidebarTaskNavButton } from './SidebarTaskNavButton'
 import { HideSidebarMenu } from './sidebar-nav-controls'
-import { i18n, translate } from '@/i18n/i18n'
+import { translate } from '@/i18n/i18n'
 
 export { getSetupGuideSidebarEntryReady, shouldShowSetupGuideEntry } from './SetupGuideSidebarEntry'
 
@@ -33,19 +34,10 @@ export function shouldShowAutomationsButton(
   return settings?.showAutomationsButton !== false
 }
 
-function subscribeToI18nLanguage(onLanguageChange: () => void): () => void {
-  i18n.on('languageChanged', onLanguageChange)
-  return () => i18n.off('languageChanged', onLanguageChange)
-}
-
-function getI18nLanguage(): string {
-  return i18n.language
-}
-
 const SidebarNav = React.memo(function SidebarNav() {
-  // Why: useSyncExternalStore rechecks after subscribing, so a startup
-  // language change cannot race this memoized component's listener setup.
-  React.useSyncExternalStore(subscribeToI18nLanguage, getI18nLanguage, getI18nLanguage)
+  // Why: this memo boundary needs its own language subscription, while
+  // translate() preserves Orca's pseudo-localization behavior.
+  useTranslation()
   const worktreePaletteShortcutCombos = useShortcutKeyComboDetails('worktree.palette')
   const openAutomationsPage = useAppStore((s) => s.openAutomationsPage)
   const openActivityPage = useAppStore((s) => s.openActivityPage)
