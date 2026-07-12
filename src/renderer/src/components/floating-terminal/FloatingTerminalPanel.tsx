@@ -28,6 +28,7 @@ import { appendUniqueOpenFileIds } from '@/components/terminal/unsaved-close-que
 import { getConnectionId } from '@/lib/connection-context'
 import { createUntitledMarkdownFileWithTemplateSelection } from '@/lib/create-untitled-markdown'
 import { detectLanguage } from '@/lib/language-detect'
+import { buildDuplicatedBrowserTabOptions } from '@/lib/duplicate-browser-tab-options'
 import { focusTerminalTabSurface } from '@/lib/focus-terminal-tab-surface'
 import { isOrcaCliAvailableOnPath } from '@/lib/agent-skill-cli-prerequisite'
 import {
@@ -60,12 +61,7 @@ import {
   ModifierDoubleTapDetector,
   toModifierDoubleTapEvent
 } from '../../../../shared/modifier-double-tap-detector'
-import type {
-  BrowserTab as BrowserTabState,
-  Tab,
-  TabGroup,
-  TerminalTab
-} from '../../../../shared/types'
+import type { BrowserTab as BrowserTabState, Tab, TerminalTab } from '../../../../shared/types'
 import { resolveUnifiedTabLabel } from '../../../../shared/tab-title-resolution'
 import { FloatingBrowserSlot } from './FloatingBrowserSlot'
 import { FloatingTerminalOrchestrationDialog } from './FloatingTerminalOrchestrationDialog'
@@ -89,10 +85,7 @@ import {
 } from './floating-terminal-panel-bounds'
 import { translate } from '@/i18n/i18n'
 import { consumeFloatingTerminalOpenMaximizedIntent } from '@/lib/floating-terminal'
-const EMPTY_TERMINAL_TABS: TerminalTab[] = []
-const EMPTY_BROWSER_TABS: BrowserTabState[] = []
-const EMPTY_GROUPS: TabGroup[] = []
-const EMPTY_UNIFIED_TABS: Tab[] = []
+import { selectFloatingTerminalPanelInputs } from './floating-terminal-panel-inputs'
 const LOCAL_RUNTIME_SETTINGS = { activeRuntimeEnvironmentId: null } as const
 
 const EditorPanel = lazy(() => import('@/components/editor/EditorPanel'))
@@ -169,12 +162,8 @@ export function FloatingTerminalPanel({
   onOpenChange,
   tourInteractionSnapshot
 }: FloatingTerminalPanelProps): React.JSX.Element | null {
-  const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
-  const browserTabsByWorktree = useAppStore((s) => s.browserTabsByWorktree)
-  const groupsByWorktree = useAppStore((s) => s.groupsByWorktree)
-  const unifiedTabsByWorktree = useAppStore((s) => s.unifiedTabsByWorktree)
-  const openFiles = useAppStore((s) => s.openFiles)
-  const expandedPaneByTabId = useAppStore((s) => s.expandedPaneByTabId)
+  const { tabs, browserTabs, groups, unifiedTabs, floatingFiles, expandedPaneByTabId } =
+    useAppStore(selectFloatingTerminalPanelInputs)
   const createTab = useAppStore((s) => s.createTab)
   const createBrowserTab = useAppStore((s) => s.createBrowserTab)
   const closeTab = useAppStore((s) => s.closeTab)
@@ -242,14 +231,6 @@ export function FloatingTerminalPanel({
     moved: boolean
   } | null>(null)
 
-  const tabs = tabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_TERMINAL_TABS
-  const browserTabs = browserTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_BROWSER_TABS
-  const groups = groupsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_GROUPS
-  const unifiedTabs = unifiedTabsByWorktree[FLOATING_TERMINAL_WORKTREE_ID] ?? EMPTY_UNIFIED_TABS
-  const floatingFiles = useMemo(
-    () => openFiles.filter((file) => file.worktreeId === FLOATING_TERMINAL_WORKTREE_ID),
-    [openFiles]
-  )
   const activeGroup = useMemo(
     () =>
       groups.find((group) => group.activeTabId != null) ??
@@ -412,6 +393,8 @@ export function FloatingTerminalPanel({
     wasFeaturePreviouslyInteracted: tourInteractionSnapshot?.wasPreviouslyInteracted
   })
 
+  // Why: this panel only queues its own editor tabs, so unrelated workspace
+  // file updates must not invalidate the hidden panel's close callbacks.
   const {
     saveDialogFileId,
     saveDialogFile,
@@ -419,7 +402,7 @@ export function FloatingTerminalPanel({
     handleSaveDialogSave,
     handleSaveDialogDiscard,
     handleSaveDialogCancel
-  } = useTerminalSaveDialog({ openFiles, closeFile, markFileDirty })
+  } = useTerminalSaveDialog({ openFiles: floatingFiles, closeFile, markFileDirty })
 
   const getNextQueuedEditorClose = useCallback((): string | null => {
     while (pendingEditorCloseQueueRef.current.length > 0) {
@@ -1490,8 +1473,7 @@ export function FloatingTerminalPanel({
                   return
                 }
                 createBrowserTab(FLOATING_TERMINAL_WORKTREE_ID, source.url, {
-                  title: source.title,
-                  sessionProfileId: source.sessionProfileId,
+                  ...buildDuplicatedBrowserTabOptions(source),
                   targetGroupId: activeGroup?.id,
                   browserRuntimeEnvironmentId: null
                 })
