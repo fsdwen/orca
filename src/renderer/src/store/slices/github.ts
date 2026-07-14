@@ -34,7 +34,7 @@ import type {
 } from '../../../../shared/github-project-types'
 import {
   isGitHubWorkItemsSshRemoteRequiredError,
-  sortWorkItemsByUpdatedAt,
+  sortWorkItemsByNumber,
   PER_REPO_FETCH_LIMIT
 } from '../../../../shared/work-items'
 import { deriveCheckStatusFromChecks, syncPRChecksStatus } from './github-checks'
@@ -206,7 +206,7 @@ type GitHubWorkItemRequestTarget =
 type GitHubWorkItemsListArgs = {
   limit: number
   query?: string
-  before?: string
+  page?: number
   noCache?: true
 }
 
@@ -1934,7 +1934,7 @@ export type GitHubSlice = {
     perRepoLimit: number,
     displayLimit: number,
     query: string,
-    before: string
+    page?: number
   ) => Promise<{ items: GitHubWorkItem[]; failedCount: number }>
   /**
    * Count total work items across repos using GitHub's search API.
@@ -2773,11 +2773,11 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         }
       })
     )
-    const merged = sortWorkItemsByUpdatedAt(perProjectResults.flat()).slice(0, displayLimit)
+    const merged = sortWorkItemsByNumber(perProjectResults.flat()).slice(0, displayLimit)
     return { items: merged, failedCount }
   },
 
-  fetchWorkItemsNextPage: async (repos, perRepoLimit, displayLimit, query, before) => {
+  fetchWorkItemsNextPage: async (repos, perRepoLimit, displayLimit, query, page) => {
     if (isGitHubWorkItemsQueryTooLarge(query)) {
       return { items: [], failedCount: 0 }
     }
@@ -2803,7 +2803,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
           const envelope = await listGitHubWorkItemsForRepo(requestContext, {
             limit: perRepoLimit,
             query: query || undefined,
-            before
+            page
           })
           // Why: page-N partial failures don't participate in the cache's per-repo
           // error banner (which is keyed on the initial-fetch cache entry). Log the
@@ -2831,7 +2831,7 @@ export const createGitHubSlice: StateCreator<AppState, [], [], GitHubSlice> = (s
         }
       })
     )
-    const merged = sortWorkItemsByUpdatedAt(perProjectResults.flat()).slice(0, displayLimit)
+    const merged = sortWorkItemsByNumber(perProjectResults.flat()).slice(0, displayLimit)
     return { items: merged, failedCount }
   },
 

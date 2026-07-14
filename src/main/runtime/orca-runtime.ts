@@ -396,7 +396,8 @@ import {
   addPRReviewComment,
   addPRReviewCommentReply,
   listLabels,
-  listAssignableUsers
+  listAssignableUsers,
+  type MainWorkItem
 } from '../github/client'
 import type { GitHubPRBranchLookupOptions } from '../github/client'
 import { resolveGitHubPrStartPoint } from '../github/pr-start-point'
@@ -445,6 +446,7 @@ import type {
   GitLabMRInlineCommentInput,
   GitLabProjectRef,
   GitLabWorkItem,
+  ListWorkItemsResult,
   MRListState
 } from '../../shared/types'
 import { inspectSetupScriptImportCandidates } from '../../shared/setup-script-imports'
@@ -12462,15 +12464,15 @@ export class OrcaRuntimeService {
     repoSelector: string,
     limit?: number,
     query?: string,
-    before?: string,
+    page?: number,
     noCache?: boolean
-  ): Promise<Awaited<ReturnType<typeof listWorkItems>>> {
+  ): Promise<ListWorkItemsResult<MainWorkItem>> {
     const repo = await this.resolveRepoSelector(repoSelector)
     return listWorkItems(
       repo.path,
       limit,
       query,
-      before,
+      page,
       repo.issueSourcePreference,
       repo.connectionId ?? null,
       noCache,

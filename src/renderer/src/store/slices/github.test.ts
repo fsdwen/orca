@@ -5932,7 +5932,7 @@ describe('createGitHubSlice.fetchWorkItems source/error envelope', () => {
         24,
         100,
         '',
-        '2026-05-21T00:00:00Z'
+        1
       )
 
       expect(result.failedCount).toBe(0)
@@ -5978,7 +5978,7 @@ describe('createGitHubSlice.fetchWorkItems source/error envelope', () => {
         24,
         100,
         'is:open',
-        '2026-05-22T00:00:00Z'
+        1
       )
 
     expect(mockApi.gh.listWorkItems).not.toHaveBeenCalled()
@@ -5989,7 +5989,7 @@ describe('createGitHubSlice.fetchWorkItems source/error envelope', () => {
         repo: 'runtime-repo-id',
         limit: 24,
         query: 'is:open',
-        before: '2026-05-22T00:00:00Z'
+        page: 1
       },
       timeoutMs: 30_000
     })
@@ -6072,7 +6072,7 @@ describe('createGitHubSlice.fetchWorkItems source/error envelope', () => {
           24,
           24,
           oversizedQuery,
-          'cursor'
+          1
         )
     ).resolves.toEqual({ items: [], failedCount: 0 })
     await expect(

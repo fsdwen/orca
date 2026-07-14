@@ -3820,9 +3820,7 @@ export default function TaskPage(): React.JSX.Element {
     if (merged.length === 0) {
       return [[]]
     }
-    const page0 = [...merged]
-      .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-      .slice(0, CROSS_REPO_DISPLAY_LIMIT)
+    const page0 = [...merged].sort((a, b) => b.number - a.number).slice(0, CROSS_REPO_DISPLAY_LIMIT)
     return [page0]
   })
   const [currentPage, setCurrentPage] = useState(0)
@@ -6251,20 +6249,11 @@ export default function TaskPage(): React.JSX.Element {
         ? pages.length + 1
         : pages.length
 
-  // Why: loads the next page using the oldest item's updatedAt as a cursor.
-  // When targetPage is provided (from clicking a numbered page beyond loaded
-  // pages), it chains fetches until that page is loaded.
+  // Why: page-number pagination against Search API. Replaces broken
+  // cursor-based approach (updated:<CURSOR), fixing #8649.
   const handleLoadNextPage = useCallback(
     async (targetPage?: number) => {
       if (paginationLoading || selectedRepos.length === 0) {
-        return
-      }
-      const lastPage = pages.at(-1)
-      if (!lastPage || lastPage.length === 0) {
-        return
-      }
-      const oldestItem = lastPage.at(-1)
-      if (!oldestItem?.updatedAt) {
         return
       }
       const q = stripRepoQualifiers(appliedTaskSearch.trim())
@@ -6280,32 +6269,41 @@ export default function TaskPage(): React.JSX.Element {
       setPaginationLoading(true)
       setLoadingTargetPage(target)
       try {
-        let cursor = oldestItem.updatedAt
-        let loadedPages = pages.length
-        const newPages: GitHubWorkItem[][] = []
+        // Why: fetch all needed pages in parallel since Search API pages are
+        // independent. Page 1 was already fetched by the initial load.
+        const startPage = pages.length + 1
+        const pageNumbers: number[] = []
+        for (let p = startPage; p <= target; p++) {
+          pageNumbers.push(p)
+        }
 
-        while (loadedPages <= target) {
-          const { items } = await fetchWorkItemsNextPage(
-            repoArgs,
-            PER_REPO_FETCH_LIMIT,
-            CROSS_REPO_DISPLAY_LIMIT,
-            q,
-            cursor
+        const results = await Promise.all(
+          pageNumbers.map((apiPage) =>
+            fetchWorkItemsNextPage(
+              repoArgs,
+              PER_REPO_FETCH_LIMIT,
+              CROSS_REPO_DISPLAY_LIMIT,
+              q,
+              apiPage
+            )
           )
-          if (paginationGenerationRef.current !== requestGeneration) {
-            return
-          }
+        )
+
+        if (paginationGenerationRef.current !== requestGeneration) {
+          return
+        }
+
+        const newPages: GitHubWorkItem[][] = []
+        for (const { items } of results) {
           if (items.length === 0) {
             break
           }
           newPages.push(items)
-          cursor = items.at(-1)!.updatedAt
-          loadedPages += 1
         }
 
         if (newPages.length > 0) {
           setPages((prev) => [...prev, ...newPages])
-          setCurrentPage(target < loadedPages ? target : loadedPages - 1)
+          setCurrentPage(Math.min(target, pages.length + newPages.length - 1))
         }
       } catch (err) {
         console.error('Failed to load next page:', err)
@@ -6408,9 +6406,7 @@ export default function TaskPage(): React.JSX.Element {
     // rather than leaving them on screen under the spinner.
     const page0 =
       preMerged.length > 0
-        ? [...preMerged]
-            .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
-            .slice(0, CROSS_REPO_DISPLAY_LIMIT)
+        ? [...preMerged].sort((a, b) => b.number - a.number).slice(0, CROSS_REPO_DISPLAY_LIMIT)
         : []
     setPages([page0])
     setCurrentPage(0)
