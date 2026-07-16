@@ -12,6 +12,8 @@ import type { TerminalPaneSplitSource } from '../shared/feature-education-teleme
 import type { ProjectExecutionRuntimeResolution } from '../shared/project-execution-runtime'
 import type { StartupCommandDelivery } from '../shared/codex-startup-delivery'
 import type { SleepingAgentLaunchConfig } from '../shared/agent-session-resume'
+import type { MobileRelayStatus } from '../shared/mobile-relay-status'
+import type { MobilePairingConnectionMode } from '../shared/mobile-pairing-connection-mode'
 import type {
   BaseRefSearchResult,
   BaseRefDefaultResult,
@@ -53,6 +55,7 @@ import type {
   UpdateStatus,
   WorktreeBaseStatusEvent,
   WorktreeDefaultTabsLaunch,
+  WorktreeHeadIdentity,
   WorktreeRemoteBranchConflictEvent
 } from '../shared/types'
 import type { PtyModelRestoreNeededEvent } from '../shared/pty-model-restore-marker'
@@ -565,6 +568,8 @@ const api = {
 
     reorder: (args) => ipcRenderer.invoke('repos:reorder', args),
 
+    reorderForHost: (args) => ipcRenderer.invoke('repos:reorderForHost', args),
+
     update: (args) => ipcRenderer.invoke('repos:update', args),
 
     pickFolder: () => ipcRenderer.invoke('repos:pickFolder'),
@@ -595,16 +600,23 @@ const api = {
     getGitUsername: (args: { repoId: string }): Promise<string> =>
       ipcRenderer.invoke('repos:getGitUsername', args),
 
-    getBaseRefDefault: (args: { repoId: string }): Promise<BaseRefDefaultResult> =>
-      ipcRenderer.invoke('repos:getBaseRefDefault', args),
+    getBaseRefDefault: (args: {
+      repoId: string
+      hostId?: ExecutionHostId
+    }): Promise<BaseRefDefaultResult> => ipcRenderer.invoke('repos:getBaseRefDefault', args),
 
-    searchBaseRefs: (args: { repoId: string; query: string; limit?: number }): Promise<string[]> =>
-      ipcRenderer.invoke('repos:searchBaseRefs', args),
+    searchBaseRefs: (args: {
+      repoId: string
+      query: string
+      limit?: number
+      hostId?: ExecutionHostId
+    }): Promise<string[]> => ipcRenderer.invoke('repos:searchBaseRefs', args),
 
     searchBaseRefDetails: (args: {
       repoId: string
       query: string
       limit?: number
+      hostId?: ExecutionHostId
     }): Promise<BaseRefSearchResult[]> => ipcRenderer.invoke('repos:searchBaseRefDetails', args),
 
     onChanged: (callback: () => void): (() => void) => {
@@ -723,6 +735,24 @@ const api = {
       ) => callback(data)
       ipcRenderer.on('worktrees:changed', listener)
       return () => ipcRenderer.removeListener('worktrees:changed', listener)
+    },
+
+    onGitStatusMetadataChanged: (callback: (data: { repoId: string }) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, data: { repoId: string }) =>
+        callback(data)
+      ipcRenderer.on('worktrees:gitStatusMetadataChanged', listener)
+      return () => ipcRenderer.removeListener('worktrees:gitStatusMetadataChanged', listener)
+    },
+
+    onHeadIdentitiesChanged: (
+      callback: (data: { repoId: string; identities: WorktreeHeadIdentity[] }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: { repoId: string; identities: WorktreeHeadIdentity[] }
+      ) => callback(data)
+      ipcRenderer.on('worktrees:headIdentitiesChanged', listener)
+      return () => ipcRenderer.removeListener('worktrees:headIdentitiesChanged', listener)
     },
 
     onBaseStatus: (callback: (data: WorktreeBaseStatusEvent) => void): (() => void) => {
@@ -945,6 +975,10 @@ const api = {
 
     listSessions: (): Promise<{ id: string; cwd: string; title: string }[]> =>
       ipcRenderer.invoke('pty:listSessions'),
+    getAuthoritativeBufferSnapshotCapabilities: (
+      ids: string[]
+    ): { id: string; authoritative: boolean | null }[] =>
+      ipcRenderer.sendSync('pty:getAuthoritativeBufferSnapshotCapabilitiesSync', { ids }),
     hasPty: (id: string): Promise<boolean | null> => ipcRenderer.invoke('pty:hasPty', { id }),
 
     getMainBufferSnapshot: (
@@ -2618,6 +2652,7 @@ const api = {
 
     readIssueCommand: (args: {
       repoId: string
+      hostId?: ExecutionHostId
     }): Promise<{
       status?: 'ok' | 'error'
       localContent: string | null
@@ -2627,8 +2662,11 @@ const api = {
       source: 'local' | 'shared' | 'none'
     }> => ipcRenderer.invoke('hooks:readIssueCommand', args),
 
-    writeIssueCommand: (args: { repoId: string; content: string }): Promise<void> =>
-      ipcRenderer.invoke('hooks:writeIssueCommand', args)
+    writeIssueCommand: (args: {
+      repoId: string
+      content: string
+      hostId?: ExecutionHostId
+    }): Promise<void> => ipcRenderer.invoke('hooks:writeIssueCommand', args)
   },
 
   ephemeralVm: {
@@ -3426,6 +3464,7 @@ const api = {
         launchConfig?: SleepingAgentLaunchConfig
         launchToken?: string
         launchAgent?: TuiAgent
+        viewMode?: 'terminal' | 'chat'
         title?: string
         ptyId?: string
         activate?: boolean
@@ -3448,6 +3487,7 @@ const api = {
           launchConfig?: SleepingAgentLaunchConfig
           launchToken?: string
           launchAgent?: TuiAgent
+          viewMode?: 'terminal' | 'chat'
           title?: string
           ptyId?: string
           activate?: boolean
@@ -4230,6 +4270,7 @@ const api = {
 
     getPairingQR: (args?: {
       address?: string
+      connectionMode?: MobilePairingConnectionMode
       rotate?: boolean
     }): Promise<
       | { available: false }
@@ -4276,7 +4317,17 @@ const api = {
       ipcRenderer.invoke('mobile:revokeRuntimeAccess', args),
 
     isWebSocketReady: (): Promise<{ ready: boolean; endpoint: string | null }> =>
-      ipcRenderer.invoke('mobile:isWebSocketReady')
+      ipcRenderer.invoke('mobile:isWebSocketReady'),
+
+    getRelayStatus: (): Promise<{ status: MobileRelayStatus }> =>
+      ipcRenderer.invoke('mobile:getRelayStatus'),
+
+    onRelayStatusChanged: (callback: (status: MobileRelayStatus) => void): (() => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: MobileRelayStatus) =>
+        callback(status)
+      ipcRenderer.on('mobile:relayStatusChanged', listener)
+      return () => ipcRenderer.removeListener('mobile:relayStatusChanged', listener)
+    }
   },
 
   agentStatus: {
@@ -4327,6 +4378,16 @@ const api = {
      *  explicit tab close even when the renderer has no matching local row. */
     dropByTabPrefix: (tabId: string): void => {
       ipcRenderer.send('agentStatus:dropByTabPrefix', tabId)
+    },
+    retirePaneAuthority: (paneKey: string): void => {
+      ipcRenderer.send('agentStatus:retirePaneAuthority', paneKey)
+    },
+    transferPaneAuthority: (args: {
+      fromPaneKey: string
+      toPaneKey: string
+      ptyId?: string
+    }): void => {
+      ipcRenderer.send('agentStatus:transferPaneAuthority', args)
     }
   },
 

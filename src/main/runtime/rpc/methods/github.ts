@@ -10,7 +10,7 @@ const RepoSelector = z.object({
 const WorkItemsList = RepoSelector.extend({
   limit: OptionalFiniteNumber,
   query: OptionalString,
-  page: OptionalFiniteNumber,
+  page: z.number().int().positive().optional(),
   noCache: z.boolean().optional()
 })
 

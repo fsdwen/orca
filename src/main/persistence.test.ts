@@ -3317,6 +3317,62 @@ describe('Store', () => {
     expect(store.getWorktreeMeta('shared::/remote/repo/wt')).toBeUndefined()
   })
 
+  it('reorderReposForHost independently reorders local and SSH rows with shared ids', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'shared', path: '/local/shared' }))
+    store.addRepo(
+      makeRepo({
+        id: 'shared',
+        path: '/ssh/shared',
+        connectionId: 'target'
+      })
+    )
+    store.addRepo(makeRepo({ id: 'local-two', path: '/local/two' }))
+    store.addRepo(
+      makeRepo({
+        id: 'ssh-two',
+        path: '/ssh/two',
+        connectionId: 'target'
+      })
+    )
+
+    expect(store.reorderReposForHost(['local-two', 'shared'], 'local')).toBe(true)
+    expect(store.getRepos().map((repo) => repo.path)).toEqual([
+      '/local/two',
+      '/ssh/shared',
+      '/local/shared',
+      '/ssh/two'
+    ])
+
+    expect(store.reorderReposForHost(['ssh-two', 'shared'], 'ssh:target')).toBe(true)
+    expect(store.getRepos().map((repo) => repo.path)).toEqual([
+      '/local/two',
+      '/ssh/two',
+      '/local/shared',
+      '/ssh/shared'
+    ])
+  })
+
+  it('reorderReposForHost rejects stale or duplicate host permutations without mutation', async () => {
+    const store = await createStore()
+    store.addRepo(makeRepo({ id: 'local-one', path: '/local/one' }))
+    store.addRepo(makeRepo({ id: 'local-two', path: '/local/two' }))
+    store.addRepo(
+      makeRepo({
+        id: 'ssh-one',
+        path: '/ssh/one',
+        connectionId: 'target',
+        executionHostId: 'ssh:target'
+      })
+    )
+    const originalPaths = store.getRepos().map((repo) => repo.path)
+
+    expect(store.reorderReposForHost(['local-two'], 'local')).toBe(false)
+    expect(store.reorderReposForHost(['local-one', 'local-one'], 'local')).toBe(false)
+    expect(store.reorderReposForHost(['missing', 'local-two'], 'local')).toBe(false)
+    expect(store.getRepos().map((repo) => repo.path)).toEqual(originalPaths)
+  })
+
   it('removeProjectForHost prunes the SSH host meta (tagged hostId) for a shared id', async () => {
     const store = await createStore()
     store.addRepo(makeRepo({ id: 'shared', path: '/local/repo' }))
@@ -5296,6 +5352,25 @@ describe('Store', () => {
     expect(ui.sidebarWidth).toBe(400)
     expect(ui.groupBy).toBe('repo') // default preserved
     expect(ui.dismissedUpdateVersion).toBeNull()
+  })
+
+  it('round-trips and normalizes the host-qualified manual repo order', async () => {
+    const store = await createStore()
+    store.updateUI({
+      manualRepoOrder: [
+        { hostId: 'runtime:node-b', repoId: 'shared' },
+        { hostId: 'bogus', repoId: 'ignored' },
+        { hostId: 'runtime:node-b', repoId: 'shared' },
+        { hostId: 'local', repoId: 'alpha' }
+      ] as never
+    })
+    store.flush()
+
+    const reloaded = await createStore()
+    expect(reloaded.getUI().manualRepoOrder).toEqual([
+      { hostId: 'runtime:node-b', repoId: 'shared' },
+      { hostId: 'local', repoId: 'alpha' }
+    ])
   })
 
   it('updateUI persists sanitized per-worktree dotfile visibility', async () => {
@@ -7353,6 +7428,44 @@ describe('Store', () => {
     } finally {
       agentHookServer.stop()
     }
+  })
+
+  it('restores cross-tab pane authority aliases before hook ingestion', async () => {
+    const physicalPaneKey = makePaneKey('tab-source', TEST_LEAF_1)
+    const ownerPaneKey = makePaneKey('tab-target', TEST_LEAF_2)
+    writeDataFile({
+      schemaVersion: 1,
+      repos: [],
+      worktreeMeta: {},
+      settings: {},
+      ui: {},
+      githubCache: { pr: {}, issue: {} },
+      legacyPaneKeyAliasEntries: [
+        {
+          ptyId: 'pty-detached',
+          legacyPaneKey: physicalPaneKey,
+          stablePaneKey: ownerPaneKey,
+          updatedAt: 10
+        }
+      ]
+    })
+
+    await createStore()
+    const { agentHookServer } = await import('./agent-hooks/server')
+    agentHookServer.ingestTerminalStatus({
+      paneKey: physicalPaneKey,
+      tabId: 'tab-source',
+      worktreeId: 'wt1',
+      payload: { state: 'working', prompt: 'detached after restart' }
+    })
+
+    expect(agentHookServer.getStatusSnapshot()).toEqual([
+      expect.objectContaining({
+        paneKey: ownerPaneKey,
+        tabId: 'tab-target',
+        prompt: 'detached after restart'
+      })
+    ])
   })
 
   it('persists fallback aliases when a legacy split layout has no PTY leaf bindings', async () => {

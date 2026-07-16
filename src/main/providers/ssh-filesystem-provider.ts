@@ -8,8 +8,9 @@ import {
   type SshRawTransferOptions
 } from './ssh-filesystem-file-upload'
 import {
-  notifySshFilesystemUnwatch,
+  closeSshFilesystemWatch,
   registerSshFilesystemWatch,
+  stopSshFilesystemWatchRegistration,
   type WatchRegistration
 } from './ssh-filesystem-provider-watch'
 import type {
@@ -20,7 +21,7 @@ import type {
   TerminalArtifactAccessOptions
 } from './types'
 import type { DirEntry, FsChangeEvent, SearchOptions, SearchResult } from '../../shared/types'
-import { isPathInsideOrEqual } from '../../shared/cross-platform-path'
+import { routeSshFilesystemWatchNotification } from './ssh-filesystem-watch-notifications'
 import type { WorkspaceSpaceDirectoryScanResult } from '../../shared/workspace-space-types'
 const WORKSPACE_SPACE_SCAN_TIMEOUT_MS = 130_000
 
@@ -42,19 +43,9 @@ export class SshFilesystemProvider implements IFilesystemProvider {
     this.connectionId = connectionId
     this.mux = mux
 
-    this.unsubscribeNotifications = mux.onNotification((method, params) => {
-      if (method === 'fs.changed') {
-        const events = params.events as FsChangeEvent[]
-        for (const [rootPath, registration] of this.watchListeners) {
-          const matching = events.filter((e) => isPathInsideOrEqual(rootPath, e.absolutePath))
-          if (matching.length > 0) {
-            for (const cb of registration.callbacks) {
-              cb(matching)
-            }
-          }
-        }
-      }
-    })
+    this.unsubscribeNotifications = mux.onNotification((method, params) =>
+      routeSshFilesystemWatchNotification(this.watchListeners, method, params)
+    )
   }
 
   dispose(): void {
@@ -66,8 +57,8 @@ export class SshFilesystemProvider implements IFilesystemProvider {
       this.unsubscribeNotifications()
       this.unsubscribeNotifications = null
     }
-    for (const rootPath of this.watchListeners.keys()) {
-      notifySshFilesystemUnwatch(this.mux, rootPath)
+    for (const registration of this.watchListeners.values()) {
+      stopSshFilesystemWatchRegistration(this.mux, registration)
     }
     this.watchListeners.clear()
   }
@@ -316,13 +307,23 @@ export class SshFilesystemProvider implements IFilesystemProvider {
     })) as string[]
   }
 
-  async watch(rootPath: string, callback: (events: FsChangeEvent[]) => void): Promise<() => void> {
+  async watch(
+    rootPath: string,
+    callback: (events: FsChangeEvent[]) => void,
+    options?: { signal?: AbortSignal; onTerminalError?: (error: Error) => void }
+  ): Promise<() => void> {
     return registerSshFilesystemWatch({
       mux: this.mux,
       disposed: () => this.disposed,
       registrations: this.watchListeners,
       rootPath,
-      callback
+      callback,
+      onTerminalError: options?.onTerminalError,
+      signal: options?.signal
     })
+  }
+
+  async closeWatch(rootPath: string): Promise<void> {
+    await closeSshFilesystemWatch(this.mux, this.watchListeners, rootPath)
   }
 }

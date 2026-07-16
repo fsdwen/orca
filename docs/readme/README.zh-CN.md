@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>面向 100x 构建者的 AI 编排器。</strong><br/>
-  并排运行 Claude Code、OpenClaude、Codex 或 OpenCode — 每个都在自己的 worktree 中运行，并在一个地方统一跟踪。
+  并排运行 Codex、Claude Code、OpenCode 或 Pi — 每个都在自己的 worktree 中运行，并在一个地方统一跟踪。
 </p>
 
 <h3 align="center"><a href="https://onorca.dev/download"><ins>下载 Orca</ins></a></h3>
@@ -36,7 +36,7 @@
 
 用手机监控并指挥你的智能体 — 智能体完成时收到通知，随时随地发送后续指令。
 
-[iOS App Store](https://apps.apple.com/us/app/orca-ide/id6766130217) · [Android APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.27/app-release.apk) · [文档 →](https://www.onorca.dev/docs/mobile)
+[iOS App Store](https://apps.apple.com/us/app/orca-ide/id6766130217) · [Android APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.31/app-release.apk) · [文档 →](https://www.onorca.dev/docs/mobile)
 
 </td>
 <td width="50%">
@@ -227,7 +227,7 @@ yay -S stably-orca-bin
 与桌面应用配对，用手机监控并指挥你的智能体。
 
 - **iOS:** [从 App Store 下载](https://apps.apple.com/us/app/orca-ide/id6766130217)
-- **Android:** [下载 APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.27/app-release.apk)
+- **Android:** [下载 APK](https://github.com/stablyai/orca/releases/download/mobile-android-v0.0.31/app-release.apk)
 
 ---
 
