@@ -5185,7 +5185,7 @@ describe('OrcaRuntimeService', () => {
     listGitHubLabelsMock.mockResolvedValueOnce([])
     listGitHubAssignableUsersMock.mockResolvedValueOnce([])
 
-    await runtime.listRepoWorkItems('id:repo-1', 7, 'is:open', 'cursor', true)
+    await runtime.listRepoWorkItems('id:repo-1', 7, 'is:open', 1, true)
     await runtime.countRepoWorkItems('id:repo-1', 'is:issue')
     await runtime.listRepoIssues('id:repo-1', 5)
     await runtime.getRepoIssue('id:repo-1', 12)
@@ -5199,7 +5199,7 @@ describe('OrcaRuntimeService', () => {
       TEST_REPO_PATH,
       7,
       'is:open',
-      'cursor',
+      1,
       undefined,
       null,
       true,
