@@ -5065,7 +5065,11 @@
           "windowSidebarSummary": "侧边栏、状态栏和文件浏览器",
           "statusBarCount": "显示 {{value0}} 个指示器。",
           "gitIgnoredGlossary": "与 .gitignore 匹配的文件。",
-          "statusBarDescription": "选择状态栏中显示哪些指示器。"
+          "statusBarDescription": "选择状态栏中显示哪些指示器。",
+          "showPinnedWorktreesInGroups": {
+            "title": "也在原来的列表中显示已固定的工作树",
+            "description": "已固定的工作树会保留在 Pinned 中，同时也显示在全部、项目、状态和 PR 中。"
+          }
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -7278,6 +7282,10 @@
             },
             "9a115966d3": "关闭时最小化到托盘",
             "4d5b9427b5": "启用后，关闭窗口会让 Orca 继续在系统托盘中运行，而不是退出。",
+            "showPinnedWorktreesInGroups": {
+              "title": "也在原来的列表中显示已固定的工作树",
+              "description": "已固定的工作树会保留在 Pinned 中，同时也显示在全部、项目、状态和 PR 中。"
+            },
             "antigravityUsageTitle": "Antigravity 使用量",
             "antigravityUsageDescription": "在状态栏中显示 Antigravity 订阅使用量。",
             "antigravityKeyword": "antigravity",

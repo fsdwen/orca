@@ -5065,7 +5065,11 @@
           "windowSidebarSummary": "サイドバー、ステータスバー、ファイルエクスプローラー",
           "statusBarCount": "{{value0}} 個のインジケーターが表示中。",
           "gitIgnoredGlossary": ".gitignore に一致するファイル。",
-          "statusBarDescription": "Choose which indicators appear in the status bar."
+          "statusBarDescription": "Choose which indicators appear in the status bar.",
+          "showPinnedWorktreesInGroups": {
+            "title": "ピン留めしたワークツリーを元のリストにも表示",
+            "description": "ピン留めしたワークツリーを Pinned に残したまま、すべて、プロジェクト、ステータス、PR にも表示します。"
+          }
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -7315,6 +7319,10 @@
             },
             "9a115966d3": "閉じるときにトレイへ最小化",
             "4d5b9427b5": "有効にすると、ウィンドウを閉じてもOrcaは終了せず、システムトレイで実行を続けます。",
+            "showPinnedWorktreesInGroups": {
+              "title": "ピン留めしたワークツリーを元のリストにも表示",
+              "description": "ピン留めしたワークツリーを Pinned に残したまま、すべて、プロジェクト、ステータス、PR にも表示します。"
+            },
             "antigravityUsageTitle": "Antigravity の使用状況",
             "antigravityUsageDescription": "ステータスバーに Antigravity サブスクリプションの使用量を表示します。",
             "antigravityKeyword": "antigravity",

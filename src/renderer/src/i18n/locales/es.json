@@ -5080,7 +5080,11 @@
           "windowSidebarSummary": "Barra lateral, barra de estado y explorador de archivos",
           "statusBarCount": "{{value0}} indicadores visibles.",
           "gitIgnoredGlossary": "Archivos que coinciden con .gitignore.",
-          "statusBarDescription": "Elige qué indicadores aparecen en la barra de estado."
+          "statusBarDescription": "Elige qué indicadores aparecen en la barra de estado.",
+          "showPinnedWorktreesInGroups": {
+            "title": "Mostrar también los worktrees fijados en sus listas originales",
+            "description": "Los worktrees fijados permanecen en Fijados y también aparecen en Todos, Proyecto, Estado y PR."
+          }
         },
         "AutoRenameBranchFromWorkSetting": {
           "1626524572": "Nautilus",
@@ -7293,6 +7297,10 @@
             },
             "9a115966d3": "Minimizar a la bandeja al cerrar",
             "4d5b9427b5": "Cuando está activado, cerrar la ventana mantiene Orca en ejecución en la bandeja del sistema en lugar de salir.",
+            "showPinnedWorktreesInGroups": {
+              "title": "Mostrar también los worktrees fijados en sus listas originales",
+              "description": "Los worktrees fijados permanecen en Fijados y también aparecen en Todos, Proyecto, Estado y PR."
+            },
             "antigravityUsageTitle": "Uso de Antigravity",
             "antigravityUsageDescription": "Muestra el uso de suscripción de Antigravity en la barra de estado.",
             "antigravityKeyword": "antigravity",
