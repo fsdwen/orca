@@ -41,6 +41,7 @@ const {
   writeFileSyncMock,
   chmodSyncMock,
   getPathMock,
+  loginPreflightExecFileMock,
   spawnMock,
   openCodeBuildPtyEnvMock,
   openCodeClearPtyMock,
@@ -72,6 +73,7 @@ const {
   writeFileSyncMock: vi.fn(),
   chmodSyncMock: vi.fn(),
   getPathMock: vi.fn(),
+  loginPreflightExecFileMock: vi.fn(),
   spawnMock: vi.fn(),
   openCodeBuildPtyEnvMock: vi.fn(),
   mimoCodeBuildPtyEnvMock: vi.fn(),
@@ -127,6 +129,13 @@ vi.mock('fs', () => ({
 
 vi.mock('node-pty', () => ({
   spawn: spawnMock
+}))
+
+// Why: this suite forces darwin on non-macOS hosts; isolate the PAM probe
+// while preserving every other child_process API used by the IPC graph.
+vi.mock('node:child_process', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  execFile: loginPreflightExecFileMock
 }))
 
 vi.mock('../opencode/hook-service', () => ({
@@ -206,6 +215,7 @@ import {
   getLocalPtyProvider
 } from './pty'
 import { _resetLocalPtyProviderStateForTest } from '../providers/local-pty-provider'
+import { resetMacosLoginShellPreflightForTests } from '../providers/macos-tcc-login-shell'
 import {
   _resetHiddenRendererPtyDeliveryGateForTest,
   isHiddenRendererPty
@@ -326,6 +336,7 @@ describe('registerPtyHandlers', () => {
     writeFileSyncMock.mockReset()
     chmodSyncMock.mockReset()
     getPathMock.mockReset()
+    loginPreflightExecFileMock.mockReset()
     spawnMock.mockReset()
     openCodeBuildPtyEnvMock.mockReset()
     mimoCodeBuildPtyEnvMock.mockReset()
@@ -7203,6 +7214,18 @@ describe('registerPtyHandlers', () => {
     // Re-enable the TCC login wrapper the suite-level beforeEach disables.
     delete process.env.ORCA_DISABLE_MACOS_LOGIN_SHELL
     process.env.SHELL = '/bin/zsh'
+    loginPreflightExecFileMock.mockImplementation(
+      (
+        _file: string,
+        _args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void
+      ) => {
+        callback(null, 'ORCA_LOGIN_PREFLIGHT_OK', '')
+        return { stdin: { end: vi.fn() } }
+      }
+    )
+    resetMacosLoginShellPreflightForTests()
 
     try {
       const [file, args, options] = await spawnAndGetCall({ cwd: '/tmp' })
@@ -7218,6 +7241,7 @@ describe('registerPtyHandlers', () => {
       // The spawn env keeps the real shell so identity/name logic is intact.
       expect(options.env.SHELL).toBe('/bin/zsh')
     } finally {
+      resetMacosLoginShellPreflightForTests()
       process.env.ORCA_DISABLE_MACOS_LOGIN_SHELL = '1'
       if (originalShell === undefined) {
         delete process.env.SHELL

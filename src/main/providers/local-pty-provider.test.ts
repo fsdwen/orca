@@ -1,6 +1,7 @@
 /* oxlint-disable max-lines */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { delimiter } from 'node:path'
+import type * as MacosTccLoginShell from './macos-tcc-login-shell'
 
 const {
   existsSyncMock,
@@ -9,6 +10,7 @@ const {
   mkdirSyncMock,
   writeFileSyncMock,
   spawnMock,
+  prepareMacosTccLoginShellMock,
   resolveAgentForegroundProcessMock,
   captureDescendantSnapshotMock,
   terminateDescendantSnapshotMock
@@ -19,6 +21,7 @@ const {
   mkdirSyncMock: vi.fn(),
   writeFileSyncMock: vi.fn(),
   spawnMock: vi.fn(),
+  prepareMacosTccLoginShellMock: vi.fn(),
   resolveAgentForegroundProcessMock: vi.fn(),
   captureDescendantSnapshotMock: vi.fn(),
   terminateDescendantSnapshotMock: vi.fn()
@@ -42,6 +45,11 @@ vi.mock('electron', () => ({
 
 vi.mock('node-pty', () => ({
   spawn: spawnMock
+}))
+
+vi.mock('./macos-tcc-login-shell', async (importOriginal) => ({
+  ...(await importOriginal<typeof MacosTccLoginShell>()),
+  prepareMacosTccLoginShell: prepareMacosTccLoginShellMock
 }))
 
 vi.mock('../pty-descendant-termination', () => ({
@@ -139,6 +147,8 @@ describe('LocalPtyProvider', () => {
     captureDescendantSnapshotMock.mockReset()
     captureDescendantSnapshotMock.mockResolvedValue(null)
     terminateDescendantSnapshotMock.mockReset()
+    prepareMacosTccLoginShellMock.mockReset()
+    prepareMacosTccLoginShellMock.mockResolvedValue(undefined)
     resolveAgentForegroundProcessMock.mockReset()
     resolveAgentForegroundProcessMock.mockImplementation(
       async (_pid: number, fallbackProcess: string | null) => ({
@@ -223,6 +233,37 @@ describe('LocalPtyProvider', () => {
 
       expect(second.id).not.toBe(first.id)
       expect(second.isReattach).toBeUndefined()
+      expect(spawnMock).toHaveBeenCalledOnce()
+    })
+
+    it('does not spawn after shutdown cancels a pending stable session id', async () => {
+      let finishPreparation!: () => void
+      spawnMock.mockClear()
+      prepareMacosTccLoginShellMock.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            finishPreparation = resolve
+          })
+      )
+
+      const spawn = provider.spawn({
+        cols: 80,
+        rows: 24,
+        sessionId: 'pending-local-session'
+      })
+      const canceledSpawn = expect(spawn).rejects.toThrow(
+        'PTY spawn canceled: pending-local-session'
+      )
+      await vi.waitFor(() => expect(prepareMacosTccLoginShellMock).toHaveBeenCalledOnce())
+
+      await provider.shutdown('pending-local-session', { immediate: true })
+      finishPreparation()
+      await canceledSpawn
+      expect(spawnMock).not.toHaveBeenCalled()
+
+      await expect(
+        provider.spawn({ cols: 80, rows: 24, sessionId: 'pending-local-session' })
+      ).resolves.toMatchObject({ id: 'pending-local-session' })
       expect(spawnMock).toHaveBeenCalledOnce()
     })
 

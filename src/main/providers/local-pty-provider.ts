@@ -27,6 +27,7 @@ import {
   validateWorkingDirectory,
   spawnShellWithFallback
 } from './local-pty-utils'
+import { prepareMacosTccLoginShell } from './macos-tcc-login-shell'
 import {
   getAttributionShellLaunchConfig,
   getShellReadyLaunchConfig,
@@ -90,6 +91,10 @@ type PtyShutdownOperation = {
   proc: pty.IPty
 }
 const ptyShutdownOperations = new Map<string, PtyShutdownOperation>()
+type PendingLocalPtySpawn = {
+  canceled: boolean
+}
+const pendingLocalPtySpawns = new Map<string, Set<PendingLocalPtySpawn>>()
 const ptyShellName = new Map<string, string>()
 const ptyAgentForegroundContextPaths = new Map<string, string[]>()
 // Why: remembers the last positively-recognized agent foreground per PTY so a
@@ -311,6 +316,42 @@ function allocatePtyId(sessionId: string | undefined): string {
     id = String(++ptyCounter)
   } while (ptyProcesses.has(id))
   return id
+}
+
+async function prepareLocalPtySpawn(id: string): Promise<void> {
+  const pendingSpawn: PendingLocalPtySpawn = { canceled: false }
+  const pending = pendingLocalPtySpawns.get(id) ?? new Set()
+  pending.add(pendingSpawn)
+  pendingLocalPtySpawns.set(id, pending)
+  try {
+    // Why: shutdown must be able to cancel a stable session id while the
+    // asynchronous macOS capability probe runs and before node-pty exists.
+    await prepareMacosTccLoginShell()
+    if (pendingSpawn.canceled) {
+      throw new Error(`PTY spawn canceled: ${id}`)
+    }
+  } finally {
+    pending.delete(pendingSpawn)
+    if (pending.size === 0) {
+      pendingLocalPtySpawns.delete(id)
+    }
+  }
+}
+
+function cancelPendingLocalPtySpawns(id: string): void {
+  const pending = pendingLocalPtySpawns.get(id)
+  if (!pending) {
+    return
+  }
+  for (const pendingSpawn of pending) {
+    pendingSpawn.canceled = true
+  }
+}
+
+function cancelAllPendingLocalPtySpawns(): void {
+  for (const id of pendingLocalPtySpawns.keys()) {
+    cancelPendingLocalPtySpawns(id)
+  }
 }
 
 /**
@@ -795,6 +836,7 @@ export class LocalPtyProvider implements IPtyProvider {
       logHistoryInjection(worktreeId, historyResult)
     }
 
+    await prepareLocalPtySpawn(id)
     const spawnResult = spawnShellWithFallback({
       shellPath,
       shellArgs,
@@ -1037,6 +1079,7 @@ export class LocalPtyProvider implements IPtyProvider {
   }
 
   async shutdown(id: string, opts: { immediate?: boolean; keepHistory?: boolean }): Promise<void> {
+    cancelPendingLocalPtySpawns(id)
     const pending = ptyShutdownOperations.get(id)
     if (pending) {
       if (opts.immediate === true) {
@@ -1342,6 +1385,7 @@ export class LocalPtyProvider implements IPtyProvider {
 
   /** Kill all in-process local PTYs. Call on app quit. */
   killAll(): void {
+    cancelAllPendingLocalPtySpawns()
     for (const [id, proc] of ptyProcesses) {
       runPtyCleanup(id)
       disposePtyListeners(id)
@@ -1365,6 +1409,8 @@ export class LocalPtyProvider implements IPtyProvider {
 }
 
 export function _resetLocalPtyProviderStateForTest(): void {
+  cancelAllPendingLocalPtySpawns()
+  pendingLocalPtySpawns.clear()
   for (const id of ptyProcesses.keys()) {
     clearPtyState(id)
   }
