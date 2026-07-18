@@ -9699,7 +9699,9 @@
               "a9bf7c171a": "プッシュ失敗",
               "834cb3f23d": "AIで修正",
               "783a808870": "閉じる"
-            }
+            },
+            "createPrIntentSyncConflicts": "同期で競合が発生しました。解決してから Create PR を再試行してください。",
+            "createPrIntentSyncing": "ブランチを同期中…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "選択した agent を開始できませんでした。",

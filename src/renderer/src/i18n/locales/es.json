@@ -9699,7 +9699,9 @@
               "a9bf7c171a": "Push fallido",
               "834cb3f23d": "Corregir con AI",
               "783a808870": "Cerrar"
-            }
+            },
+            "createPrIntentSyncConflicts": "La sincronización encontró conflictos. Resuélvelos y vuelve a intentar Crear PR.",
+            "createPrIntentSyncing": "Sincronizando rama…"
           },
           "SourceControlAgentActionDialog": {
             "8e856842d1": "No se pudo iniciar el agente seleccionado.",
