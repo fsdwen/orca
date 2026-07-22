@@ -1110,7 +1110,7 @@ async function resolvePrWorkItemSource(
     getGitHubApiRepositoryForRemote(repoPath, 'upstream', connectionId, localGitOptions)
   ])
   const source =
-    preference === 'upstream' ? (upstreamCandidate ?? originCandidate) : originCandidate
+    preference === 'origin' ? originCandidate : (upstreamCandidate ?? originCandidate)
   return { source, originCandidate, upstreamCandidate }
 }
 
