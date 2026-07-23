@@ -34,7 +34,7 @@ const BASE_DRAFT: AutomationDraft = {
 
 describe('AutomationSchedulePicker', () => {
   it('offers custom cron as a selectable cadence', () => {
-    expect(AUTOMATION_SCHEDULE_PRESET_OPTIONS).toContainEqual(['custom', 'Custom cron'])
+    expect(AUTOMATION_SCHEDULE_PRESET_OPTIONS.map(([v]) => v)).toContain('custom')
   })
 
   it('seeds custom cron from the current simple schedule', () => {

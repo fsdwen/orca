@@ -31,6 +31,13 @@ export const AUTOMATION_SCHEDULE_PRESET_OPTIONS = [
   ['weekly', 'Weekly'],
   ['custom', 'Custom cron']
 ] as const satisfies readonly [AutomationSchedulePreset, string][]
+const PRESET_LABEL_I18N_KEYS: Record<string, string> = {
+  hourly: 'auto.components.automations.AutomationSchedulePicker.b08ccb4d06',
+  daily: 'auto.components.automations.AutomationSchedulePicker.7d0917a021',
+  weekdays: 'auto.components.automations.AutomationSchedulePicker.d87a640c9b',
+  weekly: 'auto.components.automations.AutomationSchedulePicker.8cc026fd73',
+  custom: 'auto.components.automations.AutomationSchedulePicker.c3e39e17cf'
+}
 
 const DAY_OPTIONS = [
   ['0', 'Sunday'],
@@ -193,7 +200,7 @@ export function AutomationSchedulePicker({
               <SelectContent>
                 {AUTOMATION_SCHEDULE_PRESET_OPTIONS.map(([value, presetLabel]) => (
                   <SelectItem key={value} value={value}>
-                    {presetLabel}
+                    {translate(PRESET_LABEL_I18N_KEYS[value], presetLabel)}
                   </SelectItem>
                 ))}
               </SelectContent>

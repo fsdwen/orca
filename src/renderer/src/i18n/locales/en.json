@@ -12824,9 +12824,11 @@
           "d90981f766": "Time",
           "6b914c5fbb": "Day",
           "233b8c94b6": "Cadence",
-          "b08ccb4d06": "hourly",
-          "8cc026fd73": "weekly",
-          "c3e39e17cf": "custom"
+          "b08ccb4d06": "Hourly",
+          "8cc026fd73": "Weekly",
+          "c3e39e17cf": "Custom cron",
+          "7d0917a021": "Daily",
+          "d87a640c9b": "Weekdays"
         },
         "AutomationSessionField": {
           "f3c76dce51": "Reuse",

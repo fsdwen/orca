@@ -12787,7 +12787,9 @@
           "233b8c94b6": "Cadencia",
           "b08ccb4d06": "cada hora",
           "8cc026fd73": "semanalmente",
-          "c3e39e17cf": "costumbre"
+          "c3e39e17cf": "costumbre",
+          "7d0917a021": "Diario",
+          "d87a640c9b": "Días laborables"
         },
         "AutomationSessionField": {
           "f3c76dce51": "Reutilizar",
