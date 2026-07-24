@@ -187,6 +187,25 @@ describe('WorktreeCardDetailsHover interactions', () => {
     )
   })
 
+  it('rejects content pointerenter reopening after trigger pointerleave (stuck hover card bug)', () => {
+    renderHover()
+
+    act(() => {
+      interactionMocks.onHoverOpenChange?.(true)
+    })
+    // Simulate Radix: trigger pointerleave → onOpenChange(false),
+    // then content pointerenter cancels the close → onOpenChange(true).
+    // The card should stay closed (not reopen).
+    act(() => {
+      interactionMocks.onHoverOpenChange?.(false)
+      interactionMocks.onHoverOpenChange?.(true)
+    })
+
+    expect(container.querySelector('[data-hover-open]')?.getAttribute('data-hover-open')).toBe(
+      'false'
+    )
+  })
+
   it('omits the review trigger tooltip while the review menu is open', () => {
     renderHover()
 

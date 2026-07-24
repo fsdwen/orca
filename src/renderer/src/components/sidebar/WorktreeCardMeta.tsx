@@ -158,6 +158,28 @@ export function WorktreeCardDetailsHover({
   onOpenAutomationRun,
   hoverControl
 }: WorktreeCardDetailsHoverProps): React.JSX.Element {
+  const closeRequestedRef = React.useRef(false)
+  const handleTriggerPointerLeave = React.useCallback(() => {
+    closeRequestedRef.current = true
+  }, [])
+  const handleTriggerPointerEnter = React.useCallback(() => {
+    closeRequestedRef.current = false
+  }, [])
+  const triggerChild = React.useMemo(() => {
+    // Why: inject pointer handlers BEFORE Radix HoverCardTrigger's handlers
+    // (composeEventHandlers runs our handler first) so we can detect when the
+    // trigger's pointerleave happens vs the content's pointerenter reopening.
+    return React.cloneElement(children, {
+      onPointerEnter: ((e: React.PointerEvent) => {
+        children.props.onPointerEnter?.(e)
+        handleTriggerPointerEnter()
+      }) as React.PointerEventHandler,
+      onPointerLeave: ((e: React.PointerEvent) => {
+        children.props.onPointerLeave?.(e)
+        handleTriggerPointerLeave()
+      }) as React.PointerEventHandler,
+    } as React.HTMLAttributes<HTMLElement>)
+  }, [children, handleTriggerPointerEnter, handleTriggerPointerLeave])
   const internalHoverControl = useWorktreeCardDetailsHoverControl()
   const {
     hoverOpen,
@@ -185,6 +207,16 @@ export function WorktreeCardDetailsHover({
     (next: boolean): void => {
       if (!next && workspaceTitleEditing) {
         pendingWorkspaceTitleCloseRef.current = true
+        return
+      }
+      if (!next) {
+        closeRequestedRef.current = true
+      }
+      // Why: Radix HoverCardContent fires onPointerEnter which calls handleOpen,
+      // cancelling the close timer. When this happens after trigger pointerleave,
+      // reject the reopen to prevent the stuck-hover-card bug.
+      if (next && closeRequestedRef.current) {
+        closeRequestedRef.current = false
         return
       }
       pendingWorkspaceTitleCloseRef.current = false
@@ -254,7 +286,7 @@ export function WorktreeCardDetailsHover({
       openDelay={openDelay}
       closeDelay={closeDelay}
     >
-      <HoverCardTrigger asChild>{children}</HoverCardTrigger>
+      <HoverCardTrigger asChild>{triggerChild}</HoverCardTrigger>
       <HoverCardContent
         side="right"
         align="start"
