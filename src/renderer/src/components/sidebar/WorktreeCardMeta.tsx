@@ -169,6 +169,9 @@ export function WorktreeCardDetailsHover({
     // Why: inject pointer handlers BEFORE Radix HoverCardTrigger's handlers
     // (composeEventHandlers runs our handler first) so we can detect when the
     // trigger's pointerleave happens vs the content's pointerenter reopening.
+    // Also inject onMouseLeave/onMouseEnter as companions — in real browsers
+    // they fire after the pointer variants (idempotent flag), and in test
+    // environments without PointerEvent they provide the only reliable path.
     return React.cloneElement(children, {
       onPointerEnter: ((e: React.PointerEvent) => {
         children.props.onPointerEnter?.(e)
@@ -178,6 +181,14 @@ export function WorktreeCardDetailsHover({
         children.props.onPointerLeave?.(e)
         handleTriggerPointerLeave()
       }) as React.PointerEventHandler,
+      onMouseEnter: ((e: React.MouseEvent) => {
+        children.props.onMouseEnter?.(e)
+        handleTriggerPointerEnter()
+      }) as React.MouseEventHandler,
+      onMouseLeave: ((e: React.MouseEvent) => {
+        children.props.onMouseLeave?.(e)
+        handleTriggerPointerLeave()
+      }) as React.MouseEventHandler,
     } as React.HTMLAttributes<HTMLElement>)
   }, [children, handleTriggerPointerEnter, handleTriggerPointerLeave])
   const internalHoverControl = useWorktreeCardDetailsHoverControl()
@@ -208,9 +219,6 @@ export function WorktreeCardDetailsHover({
       if (!next && workspaceTitleEditing) {
         pendingWorkspaceTitleCloseRef.current = true
         return
-      }
-      if (!next) {
-        closeRequestedRef.current = true
       }
       // Why: Radix HoverCardContent fires onPointerEnter which calls handleOpen,
       // cancelling the close timer. When this happens after trigger pointerleave,

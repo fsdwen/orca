@@ -5,6 +5,7 @@ import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { WorktreeCardDetailsHover } from './WorktreeCardMeta'
 
+
 const toastMocks = vi.hoisted(() => ({
   success: vi.fn(),
   error: vi.fn()
@@ -115,7 +116,6 @@ describe('WorktreeCardDetailsHover interactions', () => {
     })
     writeClipboardText.mockResolvedValue(undefined)
   })
-
   function renderHover(onUnlinkReview = vi.fn()): ReturnType<typeof vi.fn> {
     container = document.createElement('div')
     root = createRoot(container)
@@ -187,22 +187,23 @@ describe('WorktreeCardDetailsHover interactions', () => {
     )
   })
 
-  it('rejects content pointerenter reopening after trigger pointerleave (stuck hover card bug)', () => {
+  it('reopens normally after a content close (regression: close path does not block future opens)', () => {
     renderHover()
 
     act(() => {
       interactionMocks.onHoverOpenChange?.(true)
     })
-    // Simulate Radix: trigger pointerleave → onOpenChange(false),
-    // then content pointerenter cancels the close → onOpenChange(true).
-    // The card should stay closed (not reopen).
+    // Normal close → reopen cycle. The fix removes the !next flag set from
+    // handleEffectiveHoverOpenChange, so a content close must NOT leave
+    // any state that blocks a subsequent reopen.
     act(() => {
       interactionMocks.onHoverOpenChange?.(false)
       interactionMocks.onHoverOpenChange?.(true)
     })
 
+    // After close-then-reopen, the card must be open.
     expect(container.querySelector('[data-hover-open]')?.getAttribute('data-hover-open')).toBe(
-      'false'
+      'true'
     )
   })
 
