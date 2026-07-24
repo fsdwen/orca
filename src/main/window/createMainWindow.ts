@@ -51,6 +51,7 @@ import { installPrivilegedWindowNavigationPolicy } from './privileged-window-nav
 
 // Why: show/restore/resume can overlap before the size nudge resets; never capture the temporary width as the next baseline.
 const activeRepaintJiggles = new WeakSet<BrowserWindow>()
+export const WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS = 10_000
 
 function forceRepaint(window: BrowserWindow): void {
   // Why: webContents can be destroyed a beat before the BrowserWindow during close, and this runs from timers/focus events in that gap.
@@ -849,6 +850,41 @@ export function createMainWindow(
   // Intercept close so the renderer can confirm killing running-process terminals (replies window:confirm-close to proceed).
   let windowCloseConfirmed = false
   const confirmCloseChannel = 'window:confirm-close'
+  const closeRequestReceivedChannel = 'window:close-request-received'
+  let closeRequestSequence = 0
+  let quitRendererAckRequestId: number | null = null
+  let quitRendererAckTimer: ReturnType<typeof setTimeout> | null = null
+  const clearQuitRendererAckTimer = (): void => {
+    quitRendererAckRequestId = null
+    if (quitRendererAckTimer) {
+      clearTimeout(quitRendererAckTimer)
+      quitRendererAckTimer = null
+    }
+  }
+  const armQuitRendererAckTimer = (requestId: number): void => {
+    quitRendererAckRequestId = requestId
+    if (quitRendererAckTimer) {
+      return
+    }
+    // Why: will-quit cannot run until the renderer-backed window closes; an
+    // already-frozen renderer otherwise makes Force Quit the only escape.
+    quitRendererAckTimer = setTimeout(() => {
+      quitRendererAckTimer = null
+      quitRendererAckRequestId = null
+      if (mainWindow.isDestroyed()) {
+        return
+      }
+      console.warn('[window] Renderer did not acknowledge quit; destroying unresponsive window')
+      freezeBoundsOnQuit()
+      mainWindow.destroy()
+    }, WINDOW_QUIT_RENDERER_ACK_TIMEOUT_MS)
+    quitRendererAckTimer.unref?.()
+  }
+  const onCloseRequestReceived = (event: Electron.IpcMainEvent, requestId: number): void => {
+    if (event.sender.id === rendererWebContentsId && requestId === quitRendererAckRequestId) {
+      clearQuitRendererAckTimer()
+    }
+  }
 
   // Windows minimize-to-tray: hide instead of close when enabled; returns true when it hid so callers skip their close path.
   const hideToTrayIfEnabled = (): boolean => {
@@ -909,19 +945,27 @@ export function createMainWindow(
       return
     }
     e.preventDefault()
+    const isQuitting = opts?.getIsQuitting?.() ?? false
+    const requestId = ++closeRequestSequence
+    if (isQuitting) {
+      armQuitRendererAckTimer(requestId)
+    }
     // Why: renderer owns the close decision; the always-mounted App root subscription lets even pre-workspace states reply (#5144).
     mainWindow.webContents.send('window:close-requested', {
-      isQuitting: opts?.getIsQuitting?.() ?? false
+      isQuitting,
+      requestId
     })
   })
   mainWindow.webContents.on('will-prevent-unload', () => {
     // Why: a prevented beforeunload cancels the quit; release the bounds-persistence freeze so later resizing still saves.
     windowClosing = false
+    clearQuitRendererAckTimer()
     opts?.onQuitAborted?.()
     mainWindow.webContents.send('window:unload-prevented')
   })
 
   const onConfirmClose = (): void => {
+    clearQuitRendererAckTimer()
     windowCloseConfirmed = true
     if (!mainWindow.isDestroyed()) {
       mainWindow.close()
@@ -980,12 +1024,14 @@ export function createMainWindow(
   ipcMain.handle(isMaximizedChannel, onIsMaximized)
 
   ipcMain.on(confirmCloseChannel, onConfirmClose)
+  ipcMain.on(closeRequestReceivedChannel, onCloseRequestReceived)
   mainWindow.on('closed', () => {
     // Why: the dashboard pop-out is a companion of the main window — close it
     // alongside so it never orphans as a lone window after the app window is
     // gone (e.g. on macOS where the app stays alive after the window closes).
     closeDashboardPopout()
     clearInitialRevealFallbackTimer()
+    clearQuitRendererAckTimer()
     // Why: default-deny the Cmd+B carve-out after the window is gone so a stale-true flag can't leak into later state.
     markdownEditorFocused = false
     terminalInputFocused = false
@@ -1000,6 +1046,7 @@ export function createMainWindow(
     ipcMain.removeListener(popupMenuChannel, onPopupMenu)
     ipcMain.removeHandler(isMaximizedChannel)
     ipcMain.removeListener(confirmCloseChannel, onConfirmClose)
+    ipcMain.removeListener(closeRequestReceivedChannel, onCloseRequestReceived)
     ipcMain.removeListener(markdownFocusChannel, onMarkdownEditorFocused)
     ipcMain.removeListener(terminalInputFocusChannel, onTerminalInputFocused)
     ipcMain.removeListener(floatingTerminalInputFocusChannel, onFloatingTerminalInputFocused)

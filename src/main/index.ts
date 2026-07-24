@@ -205,6 +205,7 @@ import { createHeadlessAutomationOutputSnapshotBuffer } from './automations/head
 import { buildHeadlessAutomationWorktreeCreateArgs } from './automations/headless-workspace-create'
 import { AgentAwakeService } from './agent-awake-service'
 import { registerSystemResumeBroadcast } from './system-resume-broadcast'
+import { settleTeardownWithinDeadline } from './quit-teardown-deadline'
 import {
   recordCoalescedCrashBreadcrumb,
   recordCrashBreadcrumb
@@ -2531,7 +2532,19 @@ app.on('will-quit', (e) => {
     // Why: telemetry flush folds in before app.quit() (bounded 2s); catch defensively so a flush failure can't cancel the quit chain.
     // Why: normal quits keep the detached daemon for warm reattach, but a dead dev parent leaves the temp/dev profile ownerless.
     const daemonTeardown = isDevParentShutdownRequested() ? shutdownDaemon() : disconnectDaemon()
-    Promise.allSettled([daemonTeardown, rpcStopAndClear, watcherShutdown, emulatorShutdown])
+    // Why: a wedged transport (half-open post-sleep socket) can leave one
+    // member unsettled forever and block app.quit() until Force Quit (#9447).
+    settleTeardownWithinDeadline([
+      { name: 'daemon', promise: daemonTeardown },
+      { name: 'runtime-rpc', promise: rpcStopAndClear },
+      { name: 'watchers', promise: watcherShutdown },
+      { name: 'emulator', promise: emulatorShutdown }
+    ])
+      .then((pendingTeardowns) => {
+        if (pendingTeardowns.length > 0) {
+          console.warn('[shutdown] Quit teardown deadline reached', { pendingTeardowns })
+        }
+      })
       .then(() => shutdownTelemetry())
       .then(() => shutdownObservability())
       .catch(() => {
