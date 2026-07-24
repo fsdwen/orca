@@ -10405,8 +10405,55 @@ describe('registerPtyHandlers', () => {
         pendingChars: 72 * 1024,
         rendererInFlightChars: 512 * 1024 + 'second-terminal-output'.length,
         peakPendingChars: 72 * 1024,
+        peakMaxPendingCharsByPty: 72 * 1024,
         peakRendererInFlightChars: 512 * 1024 + 'second-terminal-output'.length,
+        peakMaxRendererInFlightCharsByPty: 512 * 1024,
         ackGatedFlushSkipCount: 0
+      })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('does not scan delivery maps for 1,000 ACKs across 100 tracked PTYs', () => {
+    vi.useFakeTimers()
+    const provider = installObservableDaemonTestProvider()
+
+    try {
+      registerPtyHandlers(mainWindow as never)
+      const ptyIds = Array.from({ length: 100 }, (_, index) => `pressure-pty-${index}`)
+      for (const id of ptyIds) {
+        provider.emitData(id, 'a')
+      }
+      vi.runAllTimers()
+      for (const id of ptyIds) {
+        provider.emitData(id, 'b')
+      }
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 100,
+        pendingChars: 100,
+        rendererInFlightPtyCount: 100,
+        rendererInFlightChars: 100
+      })
+
+      const ackData = getPtyAckDataListener()
+      const mapValuesSpy = vi.spyOn(Map.prototype, 'values')
+      let mapValuesCalls = 0
+      try {
+        for (let index = 0; index < 1_000; index++) {
+          ackData(null, { id: ptyIds[0]!, processedChars: 1 })
+        }
+      } finally {
+        mapValuesCalls = mapValuesSpy.mock.calls.length
+        mapValuesSpy.mockRestore()
+      }
+
+      expect(mapValuesCalls).toBe(0)
+      expect(getPtyRendererDeliveryDebugSnapshot()).toMatchObject({
+        pendingPtyCount: 100,
+        pendingChars: 100,
+        rendererInFlightPtyCount: 99,
+        rendererInFlightChars: 99
       })
     } finally {
       vi.useRealTimers()
