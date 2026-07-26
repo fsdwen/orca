@@ -121,6 +121,27 @@ describe('HoverCardContent stuck-open guard', () => {
     expect(openCards()).toEqual(['B'])
   })
 
+  it('dismisses on the single pointermove that carries the pointer to rest elsewhere', () => {
+    renderCards(['A'])
+    const elsewhere = document.createElement('div')
+    document.body.appendChild(elsewhere)
+    pointerOver(trigger('A'), null)
+    advance(OPEN_DELAY + 10)
+
+    pointerOut(trigger('A'), content('A'))
+    pointerOver(content('A'), trigger('A'))
+    pointerMoveOver(content('A'))
+    advance(20)
+
+    // Reaching any resting place requires at least one pointermove off the
+    // card; the guard fires on that one rather than needing continuous motion.
+    pointerMoveOver(elsewhere)
+    advance(CLOSE_DELAY + 50)
+
+    expect(openCards()).toEqual([])
+    elsewhere.remove()
+  })
+
   it('keeps the card open while the pointer moves from the trigger into the content', () => {
     renderCards(['A'])
     pointerOver(trigger('A'), null)
@@ -165,9 +186,16 @@ describe('HoverCardContent stuck-open guard', () => {
     pointerMoveOver(content('A'))
     advance(20)
 
+    // Assert the guard stays silent rather than only that the card survives:
+    // React synthesizes a trigger pointerenter from any pointerout we dispatch
+    // here, which re-opens the card and would mask a missing trigger check.
+    const dismissals: Event[] = []
+    content('A').addEventListener('pointerout', (event) => dismissals.push(event))
+
     pointerMoveOver(trigger('A'))
     advance(CLOSE_DELAY + 200)
 
+    expect(dismissals).toEqual([])
     expect(openCards()).toEqual(['A'])
   })
 
