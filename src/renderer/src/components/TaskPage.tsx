@@ -3771,6 +3771,18 @@ export default function TaskPage(): React.JSX.Element {
   const lastFetchedNonceRef = useRef(-1)
   // Why: invalidation-nonce analog of lastFetchedNonceRef; a preference flip must force past fetch-dedupe or the fan-out collapses onto a stale in-flight request from the pre-flip source.
   const lastFetchedInvalidationNonceRef = useRef(0)
+  const [gitHubLogin, setGitHubLogin] = useState<string | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    void window.api.gh.viewer().then((viewer) => {
+      if (!cancelled && viewer) {
+        setGitHubLogin(viewer.login)
+      }
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const paginationGenerationRef = useRef(0)
   // Why: entering Tasks with fresh cache still verifies remote status once, reconciled into existing rows to avoid a full table shuffle.
   const landingGitHubRefreshKeysRef = useRef<ReadonlySet<string>>(new Set())
@@ -5757,6 +5769,22 @@ export default function TaskPage(): React.JSX.Element {
 
   const activeGithubTaskKind = getGitHubTaskKind(activeTaskPreset, appliedTaskSearch)
   const appliedTaskQuery = useMemo(() => parseTaskQuery(appliedTaskSearch), [appliedTaskSearch])
+  // Why: derive the highlighted preset tab from the current query so that
+  // changing filter dropdowns automatically updates which tab is active.
+  const derivedTaskPreset = useMemo<TaskViewPresetId | null>(() => {
+    if (activeGithubTaskKind === 'prs') {
+      if (appliedTaskQuery.author === '@me' || appliedTaskQuery.author === gitHubLogin) return 'my-prs'
+      if (appliedTaskQuery.reviewRequested === '@me' || appliedTaskQuery.reviewRequested === gitHubLogin) return 'review'
+      if (appliedTaskQuery.state === 'open' || appliedTaskQuery.state === null) return 'prs'
+      return null
+    }
+    if (activeGithubTaskKind === 'issues') {
+      if (appliedTaskQuery.assignee === '@me' || appliedTaskQuery.assignee === gitHubLogin) return 'my-issues'
+      if (appliedTaskQuery.state === 'open' || appliedTaskQuery.state === null) return 'issues'
+      return null
+    }
+    return null
+  }, [activeGithubTaskKind, appliedTaskQuery, gitHubLogin])
   const selectedGitHubRepoExternalLink = useMemo(() => {
     if (selectedRepos.length !== 1) {
       return null
@@ -8278,7 +8306,7 @@ export default function TaskPage(): React.JSX.Element {
                   >
                     <div className="mb-2 flex flex-wrap gap-2">
                       {getGitHubTaskKindPresets(activeGithubTaskKind).map((option) => {
-                        const active = activeTaskPreset === option.id
+                        const active = derivedTaskPreset === option.id
                         return (
                           <button
                             key={option.id}
