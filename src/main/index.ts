@@ -30,7 +30,12 @@ import {
   getSshPtyProvider,
   registerHeadlessPtyRuntime
 } from './ipc/pty'
-import { initDaemonPtyProvider, disconnectDaemon, shutdownDaemon } from './daemon/daemon-init'
+import {
+  initDaemonPtyProvider,
+  disconnectDaemon,
+  getDaemonProvider,
+  shutdownDaemon
+} from './daemon/daemon-init'
 import { closeAllWatchers } from './ipc/filesystem-watcher'
 import { disposeWorktreeBaseDirectoryWatchers } from './ipc/worktree-base-directory-watcher'
 import { registerCoreHandlers } from './ipc/register-core-handlers'
@@ -39,6 +44,12 @@ import { registerMobileHandlers } from './ipc/mobile'
 import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce, track } from './telemetry/client'
 import { classifyError } from './telemetry/classify-error'
 import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
+import {
+  indexPersistedPaneKeyPtyIds,
+  isLocalExecutionHost,
+  resolveAgentWorkspaceExecutionHostId,
+  sweepRestoredSubagentsWithoutLiveAgent
+} from './agent-hooks/restored-subagent-liveness-sweep'
 import {
   isAgentStatusHooksEnabled,
   MANAGED_AGENT_HOOK_INSTALLERS,
@@ -132,6 +143,7 @@ import {
 import { maybeRedirectAppImageCliLaunch } from './startup/appimage-cli-redirect'
 import { maybeRedirectPackagedCliEntryLaunch } from './startup/packaged-cli-entry-redirect'
 import { startFirstWindowStartupServices } from './startup/first-window-startup-services'
+import { recoverLegacyWorkerTerminalsForRendererStartup } from './startup/legacy-worker-renderer-recovery'
 import { createWslCliReconciliationStartupBarrier } from './startup/wsl-cli-reconciliation-startup-barrier'
 import { getDevInstanceIdentity } from './startup/dev-instance-identity'
 import { hydrateShellPath, mergePathSegments } from './startup/hydrate-shell-path'
@@ -724,9 +736,23 @@ if (hasSingleInstanceLock) {
 }
 
 ipcMain.handle('app:awaitFirstWindowStartupServices', async () => {
-  // Why: restored WSL terminals get a bounded chance to receive launcher repairs before window rendering proceeds.
   await Promise.all([firstWindowStartupServicesReady, managedWslCliStartupBarrierReady])
 })
+
+ipcMain.handle('app:recoverLegacyWorkerTerminalsForRendererStartup', () =>
+  recoverLegacyWorkerTerminalsForRendererStartup({
+    firstWindowStartupServicesReady,
+    managedWslCliStartupBarrierReady,
+    localPtyProviderStartupReady,
+    reconcile: async () => {
+      await runtime?.refreshRestoredOrchestrationAuthority()
+      return runtime?.reconcileLegacyWorkerTerminals({ materializeRenderer: true })
+    },
+    onDeferredRecoveryError: (error) => {
+      console.warn('[orchestration] legacy worker provider-ready recovery failed', error)
+    }
+  })
+)
 
 // Why: the renderer pulls this once its ui:openSettings listener attaches, so a Settings request queued before mount isn't lost.
 ipcMain.handle('ui:consumePendingOpenSettings', (event) =>
@@ -742,6 +768,46 @@ ipcMain.handle(
     logStartupMilestone(event, details && typeof details === 'object' ? details : {})
   }
 )
+
+/** A PTY that dies while Orca is down never runs the teardown that clears pane
+ *  state, so hydrate can rebuild a Claude subagent roster that no later hook can
+ *  retire — pinning the pane 'working' and locking its agent out of hibernation
+ *  for good. Once provider and hook hydration settle, targeted PTY liveness can
+ *  retire only rows whose local owner is proven gone. */
+async function reapRestoredSubagentsWithoutLiveAgent(): Promise<void> {
+  const currentStore = store
+  if (!currentStore) {
+    return
+  }
+  const provider = getDaemonProvider()
+  if (!provider) {
+    return
+  }
+  const persistedPtyIdByPaneKey = indexPersistedPaneKeyPtyIds(
+    currentStore.getWorkspaceSession().terminalLayoutsByTabId ?? {}
+  )
+  await sweepRestoredSubagentsWithoutLiveAgent({
+    probeLiveLocalPty: (ptyId) => provider.probePtyLiveness(ptyId),
+    isLocalExecutionHost: (worktreeId) =>
+      isLocalExecutionHost(
+        resolveAgentWorkspaceExecutionHostId(worktreeId, {
+          getRepo: (repoId) => currentStore.getRepo(repoId),
+          getWorktreeMeta: (resolvedWorktreeId) => currentStore.getWorktreeMeta(resolvedWorktreeId),
+          getFolderWorkspace: (folderWorkspaceId) =>
+            currentStore.getFolderWorkspace(folderWorkspaceId),
+          getProjectGroups: () => currentStore.getProjectGroups()
+        })
+      ),
+    getBoundPtyIdForPaneKey: getPtyIdForPaneKey,
+    getPersistedPtyIdForPaneKey: (paneKey) => persistedPtyIdByPaneKey.get(paneKey),
+    reap: (isLocalHost, isLocalPaneAgentLive, isLocalPaneLivenessEvidenceCurrent) =>
+      agentHookServer.reapRestoredClaudeSubagentsWithoutLiveAgent(
+        isLocalHost,
+        isLocalPaneAgentLive,
+        isLocalPaneLivenessEvidenceCurrent
+      )
+  })
+}
 
 function startTerminalRuntimeStartupServices(): Promise<void> {
   logStartupMilestone('first-window-startup-services-start')
@@ -791,6 +857,9 @@ function startTerminalRuntimeStartupServices(): Promise<void> {
   })
   void localPtyStartupReady.then(() => {
     logStartupMilestone('local-pty-startup-ready')
+    void reapRestoredSubagentsWithoutLiveAgent().catch((error) => {
+      console.warn('[agent-hooks] restored-subagent liveness probe failed:', error)
+    })
   })
   return firstWindowStartupServicesReady
 }
@@ -2207,6 +2276,11 @@ void app.whenReady().then(async () => {
     getAgentProviderSessionSnapshot: () => agentHookServer.getStatusSnapshot(),
     getAgentProviderSessionRowsForPane: (paneKey) =>
       agentHookServer.getStatusSnapshotForPane(paneKey),
+    attestAgentHookCompatibilityAuthority: (candidate) =>
+      agentHookServer.attestCompatibilityAuthority(candidate),
+    retireAgentHookCompatibilityAuthority: (paneKey) =>
+      agentHookServer.retirePaneAuthority(paneKey),
+    canRecoverPersistentLocalPtys: () => getDaemonProvider() !== null,
     // Why: source codex-home here (runs in window AND serve) so aiVault.listSessions includes managed-Codex sessions; registerCoreHandlers is window-only.
     getAdditionalAiVaultCodexHomePaths: () =>
       codexRuntimeHome ? codexRuntimeHome.getHostCodexHomePathsForSessionDiscovery() : [],
@@ -2222,6 +2296,7 @@ void app.whenReady().then(async () => {
     orchestrationEnvironmentTransport
   })
   runtime = runtimeService
+  runtimeService.prepareLegacyWorkerTerminalRecovery()
   publishProviderSessionChanges(agentHookServer.getProviderSessionIdentities())
   browserManager.setBrowserGuestStateChangedListener((worktreeId) => {
     runtimeService.notifyMobileSessionTabsChanged(worktreeId)
@@ -2664,6 +2739,8 @@ void app.whenReady().then(async () => {
       store,
       prepareCodexSessionResumeForLaunch
     )
+    await runtime.refreshRestoredOrchestrationAuthority()
+    await runtime.reconcileLegacyWorkerTerminals()
     // Why: headless servers can't mount <webview> panes; use offscreen WebContents, gated on a real display so browser.headless.v1 stays honest.
     if (headlessBrowserDisplayAvailable) {
       runtime.setOffscreenBrowserBackend(new OffscreenBrowserBackend(browserManager))

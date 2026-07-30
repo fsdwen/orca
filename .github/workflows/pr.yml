@@ -179,12 +179,14 @@ jobs:
             src/shared/posix-command-path-lookup.test.ts
 
   test:
-    name: tests ${{ matrix.shard }}/${{ strategy.job-total }}
+    name: tests node ${{ matrix.node }} ${{ matrix.shard }}/${{ matrix.shard_total }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
+        node: ['24', '26']
         shard: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
+        shard_total: [16]
 
     steps:
       - name: Checkout
@@ -195,6 +197,7 @@ jobs:
       - uses: ./.github/actions/install-node-dependencies
         with:
           native-runtime: node
+          node-version: ${{ matrix.node }}
 
       - name: Install Electron package binary for tests
         run: node config/scripts/install-electron-package-binary.mjs
@@ -208,7 +211,7 @@ jobs:
             --exclude=src/main/providers/__tests__/shell-ready-framework-example.test.ts \
             --exclude=src/main/pty/omp-shell-wrapper.node-pty.test.ts \
             --exclude=src/shared/posix-command-path-lookup.test.ts \
-            --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+            --shard=${{ matrix.shard }}/${{ matrix.shard_total }}
 
   package:
     name: package

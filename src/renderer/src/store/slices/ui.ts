@@ -104,7 +104,10 @@ import { clampMarkdownTocPanelWidth } from '../../../../shared/markdown-toc-pane
 import { clampCombinedDiffFileTreeWidth } from '../../../../shared/combined-diff-file-tree-width'
 import { normalizeKagiSessionLink } from '../../../../shared/browser-url'
 import type { OrcaHookScriptKind } from '../../lib/orca-hook-trust'
-import type { SettingsNavTarget } from '@/lib/settings-navigation-types'
+import {
+  isSettingsNavigationTarget,
+  type SettingsNavigationTarget
+} from '@/lib/settings-navigation-types'
 import {
   filterSetupScriptPromptDismissalsToValidRepos,
   getSetupScriptPromptDismissalKey,
@@ -740,12 +743,7 @@ export type UISlice = {
   clearNewWorkspaceDraft: () => void
   openSettingsPage: () => void
   closeSettingsPage: () => void
-  settingsNavigationTarget: {
-    pane: SettingsNavTarget
-    repoId: string | null
-    sectionId?: string
-    intent?: 'add-quick-command' | 'add-remote-orca-server' | 'add-ssh-host'
-  } | null
+  settingsNavigationTarget: SettingsNavigationTarget | null
   openSettingsTarget: (target: NonNullable<UISlice['settingsNavigationTarget']>) => void
   clearSettingsTarget: () => void
   /** Which host the Projects Settings pane shows per project (keyed by projectId). Ephemeral on purpose — never persisted, so reload reopens on the effective host. */
@@ -1503,7 +1501,15 @@ export const createUISlice: StateCreator<AppState, [], [], UISlice> = (set, get)
       return { activeView: previousView }
     }),
   settingsNavigationTarget: null,
-  openSettingsTarget: (target) => set({ settingsNavigationTarget: target }),
+  openSettingsTarget: (target) => {
+    if (!isSettingsNavigationTarget(target)) {
+      if (import.meta.env.DEV) {
+        throw new TypeError('openSettingsTarget received an invalid navigation target')
+      }
+      return
+    }
+    set({ settingsNavigationTarget: target })
+  },
   clearSettingsTarget: () => set({ settingsNavigationTarget: null }),
   settingsProjectHostSelection: {},
   settingsProjectSetupSelection: {},

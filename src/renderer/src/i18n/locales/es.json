@@ -2696,6 +2696,12 @@
                     "action": "Abrir ajuste"
                   }
                 }
+              },
+              "failed": {
+                "toast": {
+                  "62a0af2cb4": "No se pudo confirmar la copia del portapapeles del terminal",
+                  "fdd3e7e977": "La app del terminal solicitó una copia, pero Orca no pudo confirmar que llegara al portapapeles del sistema."
+                }
               }
             }
           },
@@ -3757,17 +3763,17 @@
           "b088e0785d": "Beta",
           "f43ad6edf3": "Skills",
           "7e828fb2c6": "Volver",
-          "ea72d6185b": "No se pudieron escanear los skills locales",
+          "ea72d6185b": "No se pudieron escanear los skills",
           "dc4c3328ee": "Mostrar archivo",
           "9963dff6d3": "No se encontró ninguna descripción.",
           "995fde8337": "No se pudo mostrar el archivo del skill",
-          "ab5b777350": "Se comprobaron las carpetas de skills locales, del repositorio, incluidas y de plugins.",
+          "ab5b777350": "Se comprobaron las carpetas de skills del home, del repositorio, incluidas y de plugins.",
           "08a321a984": "Ajusta la búsqueda o los filtros.",
-          "4acd6d68ec": "No se encontraron skills locales",
+          "4acd6d68ec": "No se encontraron skills",
           "6a62a0168c": "No hay coincidencias",
           "cd7893fbc1": "Escaneando skills",
           "35b9a724a0": "Disponible",
-          "0c74e7ff34": "Local"
+          "0c74e7ff34": "Instalado"
         },
         "SkillFreshnessNudge": {
           "titleOne": "Una skill de Orca instalada está desactualizada",
@@ -3857,7 +3863,7 @@
           "upToDate": "Actualizado",
           "installed": "Instalado",
           "details": "Details",
-          "needsAttention": "Needs attention"
+          "needsAttention": "Review skill"
         },
         "SkillUpdateResultRows": {
           "stillOutdated": "Still out of date after the update ran."
@@ -6139,7 +6145,8 @@
           "6436e56546": "Código QR para emparejamiento móvil",
           "1b1b70279a": "Aún no hay dispositivos emparejados.",
           "1592afcc7a": "Aún no hay dispositivos emparejados. Escanea el código QR con la aplicación móvil de Orca.",
-          "relayDegradedNotice": "No se pudo contactar con Relay: este código solo funciona en tu LAN o Tailscale. Genera uno nuevo e inténtalo de nuevo."
+          "relayDegradedNotice": "No se pudo contactar con Relay: este código solo funciona en tu LAN o Tailscale. Genera uno nuevo e inténtalo de nuevo.",
+          "pairingQrError": "Este código de emparejamiento no se pudo representar como código QR. Cópialo en Orca Mobile."
         },
         "MobileSettingsPane": {
           "9a3c280e49": "GitHub Releases",
@@ -7642,6 +7649,12 @@
             "8dd4805991": "archivo",
             "68d1db8929": "markdown",
             "90425d313c": "cambio",
+            "linkRoutingModifier": {
+              "routing": "enrutamiento",
+              "modifier": "modificador",
+              "invert": "invertir",
+              "opposite": "opuesto"
+            },
             "72c58f7792": "vista web",
             "82ba1c80ea": "localhost",
             "bea27bac4b": "enlaces",
@@ -9542,6 +9555,12 @@
           "serviceManagerHelp": "Update Orca through the service manager that starts this server.",
           "unpackedHelp": "Development builds must be updated from their source checkout.",
           "legacyHelp": "Update this server manually once to enable remote updates."
+        },
+        "BrowserLinkRoutingModifierSetting": {
+          "titleSystem": "Hold Shift to open in your web browser",
+          "titleOrca": "Hold Shift to open in Orca",
+          "descriptionSystem": "Links open in Orca, so {{chord}}+click sends one to your system browser instead.",
+          "descriptionOrca": "Links open in your system browser. When enabled, {{chord}}+click opens one in Orca's built-in browser instead."
         },
         "PluginConsentDialog": {
           "workerTrust": "Proceso en segundo plano — se ejecuta en su propio proceso",
@@ -11462,7 +11481,8 @@
             "preview": "Vista previa",
             "stable": "Estable"
           },
-          "relayDegradedNotice": "No se pudo contactar con Relay: este código solo funciona en tu LAN o Tailscale."
+          "relayDegradedNotice": "No se pudo contactar con Relay: este código solo funciona en tu LAN o Tailscale.",
+          "pairingQrError": "Este código de emparejamiento no se pudo representar como código QR. Cópialo en Orca Mobile."
         },
         "MobilePage": {
           "e17393c6a3": "Vista previa del teléfono",
@@ -11579,12 +11599,13 @@
         },
         "CustomNetworkAddressDialog": {
           "title": "Dirección de red personalizada",
-          "description": "Anuncia una dirección que tu teléfono pueda alcanzar cuando no esté en la misma red Wi-Fi: por ejemplo, un nombre de host de Tailscale o una IP estática.",
+          "description": "Anuncia una dirección a la que pueda acceder tu teléfono, por ejemplo, un nombre de host de Tailscale, una dirección IP o una URL de proxy inverso.",
           "label": "Dirección",
-          "placeholder": "my-mac.ts.net, home.example.com o 192.168.1.50",
-          "hint": "Introduce una dirección IP o un nombre de host (un nombre MagicDNS de Tailscale, un dominio DDNS o un nombre de host de LAN), opcionalmente con :puerto.",
+          "placeholder": "home.example.com:8443 o https://example.com/orca",
+          "hint": "Introduce una dirección IPv4/IPv6, un nombre de host o una URL HTTP(S)/WebSocket completa. Los puertos son opcionales.",
           "cancel": "Cancelar",
-          "use": "Usar dirección"
+          "use": "Usar dirección",
+          "confirmationError": "Esta dirección no pudo generar un código de emparejamiento escaneable. Comprueba la dirección e inténtalo de nuevo."
         },
         "NetworkInterfacePicker": {
           "trigger-label": "Dirección de red para anunciar",
