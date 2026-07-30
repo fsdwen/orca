@@ -1,4 +1,4 @@
-import { normalize } from 'node:path'
+import { dirname, basename, normalize } from 'node:path'
 import { realpath, stat } from 'node:fs/promises'
 import type { Stats } from 'node:fs'
 import type { Store } from '../persistence'
@@ -183,6 +183,15 @@ export async function buildWorktreeBaseDirectoryWatchTargets(
   const targets = new Map<string, WorktreeBaseWatchTarget>()
   for (const repo of store.getRepos()) {
     if (isFolderRepo(repo)) {
+      // Watch the parent directory so the base poller detects
+      // `.git` creation from external `git init`.
+      const parentDir = dirname(repo.path)
+      const config: WorktreeBaseRepoWatchConfig = {
+        repoId: repo.id,
+        repoName: basename(repo.path),
+        nestWorkspaces: false
+      }
+      await addTarget(targets, 'base', parentDir, config)
       continue
     }
     const executionHostId = getRepoExecutionHostId(repo)
