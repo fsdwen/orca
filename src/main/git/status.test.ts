@@ -2103,16 +2103,7 @@ describe('getBranchCompare', () => {
     const result = await getBranchCompare('/repo', 'origin/main')
 
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(
-      [
-        '-c',
-        'core.quotePath=false',
-        'diff',
-        '--name-status',
-        '-M',
-        '-C',
-        'merge-base-oid',
-        'head-oid'
-      ],
+      ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', 'merge-base-oid', 'head-oid'],
       expect.objectContaining({ cwd: '/repo' })
     )
     expect(result.entries).toEqual([
@@ -2264,17 +2255,7 @@ describe('getBranchCompare', () => {
     const result = await getBranchCompare('/repo', 'origin/main')
 
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(
-      [
-        '-c',
-        'core.quotePath=false',
-        'diff',
-        '-z',
-        '--numstat',
-        '-M',
-        '-C',
-        'merge-base-oid',
-        'head-oid'
-      ],
+      ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', 'merge-base-oid', 'head-oid'],
       expect.objectContaining({ cwd: '/repo' })
     )
     expect(result.entries).toEqual([
@@ -2311,17 +2292,7 @@ describe('getCommitCompare', () => {
     const result = await getCommitCompare('/repo', 'commit-oid')
 
     expect(gitExecFileAsyncMock).toHaveBeenCalledWith(
-      [
-        '-c',
-        'core.quotePath=false',
-        'diff',
-        '-z',
-        '--numstat',
-        '-M',
-        '-C',
-        'parent-oid',
-        'commit-oid'
-      ],
+      ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', 'parent-oid', 'commit-oid'],
       expect.objectContaining({ cwd: '/repo' })
     )
     expect(result.entries).toEqual([

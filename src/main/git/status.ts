@@ -52,7 +52,7 @@ import { getLargeDiffRenderLimit } from '../../shared/large-diff-render-limit'
 import { InFlightPromiseDedupe, stableInFlightKey } from '../../shared/in-flight-promise-dedupe'
 import type { GitRuntimeOptions } from './git-runtime-options'
 import { gitOptionsForWorktree } from './git-runtime-options'
-import { parseGitRevListFirstParentOid } from '../../shared/git-rev-list-output'
+import { parseGitRevListParentOids } from '../../shared/git-rev-list-output'
 import {
   beginGitStatusLineStatsCacheWrite,
   clearGitStatusLineStatsCache,
@@ -1526,11 +1526,12 @@ export async function getCommitCompare(
       ['rev-list', '--parents', '-n', '1', commitOid],
       gitOptionsForWorktree(worktreePath, options)
     )
-    const firstParent = parseGitRevListFirstParentOid(stdout)
+    const parentOids = parseGitRevListParentOids(stdout)
+    const firstParent = parentOids[0] ?? null
     summary.parentOid = firstParent
     summary.baseRef = firstParent ? firstParent.slice(0, 7) : 'empty tree'
 
-    const entries = await loadCommitChanges(worktreePath, summary.parentOid, commitOid, options)
+    const entries = await loadCommitChanges(worktreePath, parentOids, commitOid, options)
     summary.changedFiles = entries.length
     return { summary, entries }
   } catch (error) {
@@ -1622,11 +1623,11 @@ async function loadBranchChanges(
   // Why: both diffs are independent, so run them concurrently instead of serializing.
   const [{ stdout }, { stdout: numstat }] = await Promise.all([
     gitExecFileAsync(
-      ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', '-C', mergeBase, headOid],
+      ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', mergeBase, headOid],
       gitOptions
     ),
     gitExecFileAsync(
-      ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', '-C', mergeBase, headOid],
+      ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', mergeBase, headOid],
       gitOptions
     )
   ])
@@ -1648,40 +1649,43 @@ async function loadBranchChanges(
 
 async function loadCommitChanges(
   worktreePath: string,
-  parentOid: string | null,
+  parentOids: string[],
   commitOid: string,
   options: GitRuntimeOptions = {}
 ): Promise<GitBranchChangeEntry[]> {
+  const isMerge = parentOids.length > 1
   // Why: root commits have no parent tree; diff-tree --root uses git's empty tree, avoiding a hardcoded hash-format-specific oid.
-  const args = parentOid
-    ? ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', '-C', parentOid, commitOid]
-    : [
-        '-c',
-        'core.quotePath=false',
-        'diff-tree',
-        '--root',
-        '--no-commit-id',
-        '--name-status',
-        '-r',
-        '-M',
-        '-C',
-        commitOid
-      ]
-  const numstatArgs = parentOid
-    ? ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', '-C', parentOid, commitOid]
-    : [
-        '-c',
-        'core.quotePath=false',
-        'diff-tree',
-        '-z',
-        '--root',
-        '--no-commit-id',
-        '--numstat',
-        '-r',
-        '-M',
-        '-C',
-        commitOid
-      ]
+  const args = isMerge
+    ? ['-c', 'core.quotePath=false', 'diff-tree', '-m', '--name-status', '-r', '-M', commitOid]
+    : parentOids[0]
+      ? ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', parentOids[0], commitOid]
+      : [
+          '-c',
+          'core.quotePath=false',
+          'diff-tree',
+          '--root',
+          '--no-commit-id',
+          '--name-status',
+          '-r',
+          '-M',
+          commitOid
+        ]
+  const numstatArgs = isMerge
+    ? ['-c', 'core.quotePath=false', 'diff-tree', '-m', '-z', '--numstat', '-r', '-M', commitOid]
+    : parentOids[0]
+      ? ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', parentOids[0], commitOid]
+      : [
+          '-c',
+          'core.quotePath=false',
+          'diff-tree',
+          '-z',
+          '--root',
+          '--no-commit-id',
+          '--numstat',
+          '-r',
+          '-M',
+          commitOid
+        ]
   const gitOptions = {
     ...gitOptionsForWorktree(worktreePath, options),
     maxBuffer: MAX_GIT_SHOW_BYTES
@@ -1693,17 +1697,38 @@ async function loadCommitChanges(
   ])
   const statsByPath = parseNumstat(numstat)
 
-  const entries: GitBranchChangeEntry[] = []
+  const parsedEntries: GitBranchChangeEntry[] = []
   for (const line of stdout.split(/\r?\n/)) {
     if (!line) {
       continue
     }
     const entry = parseBranchChangeLine(line)
     if (entry) {
-      entries.push({ ...entry, ...statsByPath.get(entry.path) })
+      parsedEntries.push({ ...entry, ...statsByPath.get(entry.path) })
     }
   }
-  return entries
+  // Why: diff-tree -m emits per-parent diffs that duplicate files. Dedup by path,
+  // keep first status, merge stats (take max across parents).
+  if (!isMerge) {
+    return parsedEntries
+  }
+  const seenByPath = new Map<string, GitBranchChangeEntry>()
+  for (const entry of parsedEntries) {
+    const existing = seenByPath.get(entry.path)
+    if (!existing) {
+      seenByPath.set(entry.path, { ...entry })
+    } else {
+      existing.added = Math.max(existing.added ?? 0, entry.added ?? 0)
+      existing.removed = Math.max(existing.removed ?? 0, entry.removed ?? 0)
+      // Why: prefer non-delete status when merging — a file deleted in one parent
+      // but modified in another is still present in the merge.
+      if (existing.status === 'deleted' && entry.status !== 'deleted') {
+        existing.status = entry.status
+        existing.oldPath = entry.oldPath
+      }
+    }
+  }
+  return [...seenByPath.values()]
 }
 
 function parseBranchChangeLine(line: string): GitBranchChangeEntry | null {

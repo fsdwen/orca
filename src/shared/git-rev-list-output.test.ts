@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   parseGitRevListAheadBehindCounts,
-  parseGitRevListFirstParentOid
+  parseGitRevListFirstParentOid,
+  parseGitRevListParentOids
 } from './git-rev-list-output'
 
 describe('parseGitRevListAheadBehindCounts', () => {
@@ -50,5 +51,22 @@ describe('parseGitRevListFirstParentOid', () => {
 
   it('returns null for a root commit', () => {
     expect(parseGitRevListFirstParentOid('commit-oid\n')).toBeNull()
+  })
+})
+
+describe('parseGitRevListParentOids', () => {
+  it('returns both parents for a merge commit', () => {
+    expect(parseGitRevListParentOids('commit-oid parent1 parent2\n')).toEqual([
+      'parent1',
+      'parent2'
+    ])
+  })
+
+  it('returns single parent for a regular commit', () => {
+    expect(parseGitRevListParentOids('commit-oid parent-oid\n')).toEqual(['parent-oid'])
+  })
+
+  it('returns empty array for a root commit', () => {
+    expect(parseGitRevListParentOids('commit-oid\n')).toEqual([])
   })
 })

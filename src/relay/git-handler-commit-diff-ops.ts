@@ -2,7 +2,7 @@ import { readBlobAtOid, type GitBufferExec, type GitExec } from './git-handler-o
 import { parseBranchDiff } from './git-handler-utils'
 import { buildDiffResult } from './git-diff-result'
 import { parseNumstat } from '../shared/git-uncommitted-line-stats'
-import { parseGitRevListFirstParentOid } from '../shared/git-rev-list-output'
+import { parseGitRevListParentOids } from '../shared/git-rev-list-output'
 
 const FULL_GIT_OBJECT_ID_PATTERN = /^(?:[0-9a-fA-F]{40}|[0-9a-fA-F]{64})$/
 
@@ -50,63 +50,76 @@ export async function commitCompare(git: GitExec, worktreePath: string, commitId
       ['rev-list', '--parents', '-n', '1', commitOid],
       worktreePath
     )
-    const firstParent = parseGitRevListFirstParentOid(parentsOut)
+    const parentOids = parseGitRevListParentOids(parentsOut)
+    const firstParent = parentOids[0] ?? null
     summary.parentOid = firstParent
     summary.baseRef = firstParent ? firstParent.slice(0, 7) : 'empty tree'
 
+    const isMerge = parentOids.length > 1
     // Why: root commits have no parent tree; diff-tree --root asks git to
     // compare against the repository's empty tree without hardcoding hash format.
-    const diffArgs = summary.parentOid
-      ? [
-          '-c',
-          'core.quotePath=false',
-          'diff',
-          '--name-status',
-          '-M',
-          '-C',
-          summary.parentOid,
-          commitOid
-        ]
-      : [
-          '-c',
-          'core.quotePath=false',
-          'diff-tree',
-          '--root',
-          '--no-commit-id',
-          '--name-status',
-          '-r',
-          '-M',
-          '-C',
-          commitOid
-        ]
-    const numstatArgs = summary.parentOid
-      ? [
-          '-c',
-          'core.quotePath=false',
-          'diff',
-          '--numstat',
-          '-M',
-          '-C',
-          summary.parentOid,
-          commitOid
-        ]
-      : [
-          '-c',
-          'core.quotePath=false',
-          'diff-tree',
-          '--root',
-          '--no-commit-id',
-          '--numstat',
-          '-r',
-          '-M',
-          '-C',
-          commitOid
-        ]
+    const diffArgs = isMerge
+      ? ['-c', 'core.quotePath=false', 'diff-tree', '-m', '--name-status', '-r', '-M', commitOid]
+      : firstParent
+        ? ['-c', 'core.quotePath=false', 'diff', '--name-status', '-M', firstParent, commitOid]
+        : [
+            '-c',
+            'core.quotePath=false',
+            'diff-tree',
+            '--root',
+            '--no-commit-id',
+            '--name-status',
+            '-r',
+            '-M',
+            commitOid
+          ]
+    const numstatArgs = isMerge
+      ? ['-c', 'core.quotePath=false', 'diff-tree', '-m', '-z', '--numstat', '-r', '-M', commitOid]
+      : firstParent
+        ? ['-c', 'core.quotePath=false', 'diff', '-z', '--numstat', '-M', firstParent, commitOid]
+        : [
+            '-c',
+            'core.quotePath=false',
+            'diff-tree',
+            '-z',
+            '--root',
+            '--no-commit-id',
+            '--numstat',
+            '-r',
+            '-M',
+            commitOid
+          ]
     const [{ stdout }, { stdout: numstat }] = await Promise.all([
       git(diffArgs, worktreePath),
       git(numstatArgs, worktreePath)
     ])
-    const entries = parseBranchDiff(stdout, parseNumstat(numstat))
+    const parsedEntries = parseBranchDiff(stdout, parseNumstat(numstat))
+
+    // Why: diff-tree -m emits per-parent diffs that duplicate files.
+    if (!isMerge) {
+      summary.changedFiles = parsedEntries.length
+      return { summary, entries: parsedEntries }
+    }
+
+    const seenByPath = new Map<string, Record<string, unknown>>()
+    for (const entry of parsedEntries) {
+      const path = entry.path as string
+      const existing = seenByPath.get(path)
+      if (!existing) {
+        seenByPath.set(path, { ...entry })
+      } else {
+        existing.added = Math.max((existing.added as number) ?? 0, (entry.added as number) ?? 0)
+        existing.removed = Math.max(
+          (existing.removed as number) ?? 0,
+          (entry.removed as number) ?? 0
+        )
+        if ((existing.status as string) === 'deleted' && (entry.status as string) !== 'deleted') {
+          existing.status = entry.status
+          existing.oldPath = entry.oldPath
+        }
+      }
+    }
+    const entries = [...seenByPath.values()]
     summary.changedFiles = entries.length
     return { summary, entries }
   } catch (error) {

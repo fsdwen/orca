@@ -30,6 +30,16 @@ export function parseGitRevListFirstParentOid(output: string): string | null {
   return getProcessOutputFields(output, 2)[1] ?? null
 }
 
+/**
+ * Parse rev-list --parents -n 1 output into all parent OIDs.
+ * Returns an empty array for root commits.
+ */
+export function parseGitRevListParentOids(output: string): string[] {
+  const fields = getProcessOutputFields(output, 10)
+  // fields[0] = commitOid, fields[1..] = parent OIDs
+  return fields.slice(1).filter((f): f is string => f !== '' && f !== undefined && f !== null)
+}
+
 function parseGitRevListNonNegativeCount(value: string | undefined): number | null {
   if (!value || !/^\d+$/.test(value)) {
     return null
