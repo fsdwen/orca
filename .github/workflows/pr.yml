@@ -62,6 +62,11 @@ jobs:
       - name: Verify localization catalog
         run: pnpm run verify:localization-catalog
 
+      # Why: extraction writes sorted evidence to an isolated temporary path,
+      # so feature PRs need one normalized AST pass rather than a three-OS matrix.
+      - name: Verify localization extraction
+        run: pnpm run verify:localization-extraction
+
       - name: Verify localization coverage
         run: pnpm run verify:localization-coverage
 

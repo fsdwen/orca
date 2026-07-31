@@ -43,7 +43,7 @@ import { initObservability, shutdownObservability } from './observability'
 import { registerMobileHandlers } from './ipc/mobile'
 import { initTelemetry, shutdownTelemetry, trackAppOpenedOnce, track } from './telemetry/client'
 import { classifyError } from './telemetry/classify-error'
-import { runManagedHookInstallers } from './agent-hooks/install-telemetry'
+import { recordManagedHookInstallFailure } from './agent-hooks/install-telemetry'
 import {
   indexPersistedPaneKeyPtyIds,
   isLocalExecutionHost,
@@ -51,8 +51,8 @@ import {
   sweepRestoredSubagentsWithoutLiveAgent
 } from './agent-hooks/restored-subagent-liveness-sweep'
 import {
+  applyAgentStatusHooksEnabled,
   isAgentStatusHooksEnabled,
-  MANAGED_AGENT_HOOK_INSTALLERS,
   removeManagedAgentHooks
 } from './agent-hooks/managed-agent-hook-controls'
 import { initCohortClassifier } from './telemetry/cohort-classifier'
@@ -80,6 +80,7 @@ import { DesktopRelayService } from './runtime/relay/desktop-relay-service'
 import type { RelayBrokerStatus } from './runtime/relay/relay-session-broker'
 import { awaitRuntimeFileWatcherUnsubscribes } from './runtime/orca-runtime-files'
 import { clearRuntimeMetadataIfOwned } from './runtime/runtime-metadata'
+import { scheduleAllPendingHistoryTreeRemovals } from './terminal-history-deletion'
 import { ensureMainI18n, setMainPluginLanguagePacks, setMainUiLanguage } from './i18n/main-i18n'
 import {
   getNextDefaultOnAppearanceSettingValue,
@@ -1996,6 +1997,7 @@ void app.whenReady().then(async () => {
 
   const activeOrcaProfile = ensureActiveOrcaProfile()
   store = new Store({ dataFile: activeOrcaProfile.dataFile })
+  wslHookRelayManager.setManagedHookSettingsResolver(() => store?.getSettings() ?? null)
   logStartupMilestone('store-loaded')
   // Why: apply initial fallback WSL distro from store settings for global git/CLI calls.
   setDefaultWslDistroOverride(store.getSettings().terminalWindowsWslDistro ?? null)
@@ -2556,7 +2558,17 @@ void app.whenReady().then(async () => {
   if (shouldInstallManagedHooks(is.dev)) {
     // Why: check the persisted off switch before any auto-install so removed hooks don't silently reappear on launch.
     if (isAgentStatusHooksEnabled(store.getSettings())) {
-      runManagedHookInstallers(MANAGED_AGENT_HOOK_INSTALLERS)
+      const managedHookStore = store
+      void applyAgentStatusHooksEnabled(true, managedHookStore.getSettings(), {
+        shouldHydrateShellPath: app.isPackaged && process.platform !== 'win32',
+        onInstallError: recordManagedHookInstallFailure,
+        shouldContinue: (agent) => {
+          const settings = managedHookStore.getSettings()
+          return isAgentStatusHooksEnabled(settings) && !settings.disabledTuiAgents.includes(agent)
+        }
+      }).catch((error) => {
+        console.warn('[agent-hooks] failed to reconcile managed hooks on startup:', error)
+      })
     } else {
       removeManagedAgentHooks()
     }
@@ -2791,6 +2803,9 @@ void app.whenReady().then(async () => {
     }
     // Why: headless serve never opens a renderer, so arm scheduled automation dispatch here.
     automations.start()
+    // Why: serve deletes worktrees too, and the history GC that normally drains delete tombstones is
+    // armed from the main window — without this, a quit mid-removal leaks the tree until a desktop launch.
+    scheduleAllPendingHistoryTreeRemovals()
     await printServeReady(serveOptions)
     return
   }
@@ -2917,6 +2932,13 @@ app.on('will-quit', (e) => {
   killAllPty()
   const watcherShutdown = shutdownWatchersOnce()
   store?.flush()
+  // Why: usage-cache writes are queued off the main thread, so a quit right after setEnabled or a
+  // scan completion would drop the final snapshot. Captured before any await; joins the barrier below.
+  const usageCacheFlush = Promise.all([
+    claudeUsage?.flush(),
+    codexUsage?.flush(),
+    openCodeUsage?.flush()
+  ]).then(() => {})
 
   // Why: preventDefault to await disconnectDaemon's async checkpoint writes (else data lost); guard prevents an infinite quit loop on the re-fired will-quit.
   if (!daemonDisconnectDone) {
@@ -2950,7 +2972,8 @@ app.on('will-quit', (e) => {
       { name: 'runtime-rpc', promise: rpcStopAndClear },
       { name: 'watchers', promise: watcherShutdown },
       { name: 'emulator', promise: emulatorShutdown },
-      { name: 'plugin-hosts', promise: pluginHostShutdown }
+      { name: 'plugin-hosts', promise: pluginHostShutdown },
+      { name: 'usage-cache', promise: usageCacheFlush }
     ])
       .then((pendingTeardowns) => {
         if (pendingTeardowns.length > 0) {
