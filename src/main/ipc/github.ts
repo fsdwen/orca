@@ -193,6 +193,18 @@ function localGitOptionArgs(store: Store, repo: Repo): [] | [{ wslDistro?: strin
   return Object.keys(localGitOptions).length > 0 ? [localGitOptions] : []
 }
 
+function getViewerExecutionOptions(store: Store, repo: Repo, args: RepoScopedArgs) {
+  const identity =
+    args.sourceContext?.providerIdentity?.provider === 'github'
+      ? args.sourceContext.providerIdentity
+      : null
+  const host = identity ? identity.host?.trim() || 'github.com' : undefined
+  return {
+    ...(repo.connectionId ? {} : { cwd: repo.path, ...localGitOptionArgs(store, repo)[0] }),
+    ...(host ? { host } : {})
+  }
+}
+
 function applyRepoToPRRefreshCandidate(
   store: Store,
   repo: Repo,
@@ -1169,8 +1181,14 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
     )
   })
 
+  ipcMain.handle('gh:viewer', (_event, args?: RepoScopedArgs) => {
+    if (!args) {
+      return getAuthenticatedViewer()
+    }
+    const repo = assertRegisteredRepo(args, store)
+    return getAuthenticatedViewer(getViewerExecutionOptions(store, repo, args))
+  })
   // Star operations target the Orca repo itself — no repoPath validation needed
-  ipcMain.handle('gh:viewer', () => getAuthenticatedViewer())
   ipcMain.handle('gh:checkOrcaStarred', () => checkOrcaStarred())
   ipcMain.handle('gh:starOrca', async (_event, source: unknown) => {
     const sourceParse = appStarSourceSchema.safeParse(source)

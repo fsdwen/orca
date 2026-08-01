@@ -1271,7 +1271,11 @@ const api = {
   },
 
   gh: {
-    viewer: (): Promise<unknown> => ipcRenderer.invoke('gh:viewer'),
+    viewer: (args?: {
+      repoPath: string
+      repoId?: string
+      sourceContext?: TaskSourceContext | null
+    }): Promise<unknown> => ipcRenderer.invoke('gh:viewer', args),
 
     repoSlug: (args: { repoPath: string; repoId?: string }): Promise<unknown> =>
       ipcRenderer.invoke('gh:repoSlug', args),

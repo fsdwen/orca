@@ -1,144 +1,71 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { parseTaskQuery } from '../../../shared/task-query'
+import { deriveGitHubTaskPreset, requiresGitHubViewerLogin } from './task-page-preset-highlight'
 
-const TASK_PAGE_SOURCE = readFileSync(join(__dirname, 'TaskPage.tsx'), 'utf8')
-
-function sourceBetween(
-  source: string,
-  startPattern: string,
-  endPattern: string
-): string {
-  const start = source.indexOf(startPattern)
-  expect(
-    start,
-    `Expected to find "${startPattern}" in TaskPage.tsx`
-  ).toBeGreaterThanOrEqual(0)
-  const end = source.indexOf(endPattern, start + startPattern.length)
-  expect(
-    end,
-    `Expected to find "${endPattern}" after "${startPattern}" in TaskPage.tsx`
-  ).toBeGreaterThan(start)
-  return source.slice(start, end)
+function derive(kind: 'prs' | 'issues', query: string, viewerLogin: string | null = null) {
+  return deriveGitHubTaskPreset(kind, parseTaskQuery(query), viewerLogin)
 }
 
 describe('TaskPage preset tab highlighting boundary', () => {
-  // ── Button rendering ─────────────────────────────────
-
-  it('derives active preset from derivedTaskPreset for both PR and Issues', () => {
-    const presetSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      '{getGitHubTaskKindPresets(activeGithubTaskKind).map((option) => {',
-      ') : taskSource ==='
-    )
-
-    expect(presetSection).toContain('derivedTaskPreset === option.id')
-    // Must NOT reference activeTaskPreset for button highlighting
-    expect(presetSection).not.toMatch(/\bactive\s*=\s*activeTaskPreset\b/)
+  it('keeps the open presets active before viewer identity resolves', () => {
+    expect(derive('prs', 'is:pr is:open')).toBe('prs')
+    expect(derive('issues', 'is:issue is:open')).toBe('issues')
+    expect(derive('prs', 'is:pr')).toBe('prs')
+    expect(derive('issues', 'is:issue')).toBe('issues')
   })
 
-  // ── PR kind derivation ──────────────────────────────
-
-  it('PR: derives my-prs from @me or gitHubLogin', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
-    )
-
-    expect(derivationSection).toContain("author === '@me'")
-    expect(derivationSection).toContain('author === gitHubLogin')
-    expect(derivationSection).toContain("return 'my-prs'")
-    // Must not match any non-null author
-    expect(derivationSection).not.toMatch(/if\s*\([^)]*author\s*!==\s*null/)
+  it('derives personal presets from @me', () => {
+    expect(derive('prs', 'is:pr is:open author:@me')).toBe('my-prs')
+    expect(derive('prs', 'is:pr is:open review-requested:@me')).toBe('review')
+    expect(derive('issues', 'is:issue is:open assignee:@me')).toBe('my-issues')
   })
 
-  it('PR: derives review from @me or gitHubLogin', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
-    )
-
-    expect(derivationSection).toContain("reviewRequested === '@me'")
-    expect(derivationSection).toContain('reviewRequested === gitHubLogin')
-    expect(derivationSection).toContain("return 'review'")
+  it('matches the resolved viewer login case-insensitively', () => {
+    expect(derive('prs', 'is:pr is:open author:OCTOCAT', 'octocat')).toBe('my-prs')
+    expect(derive('prs', 'is:pr is:open review-requested:octocat', 'OctoCat')).toBe('review')
+    expect(derive('issues', 'is:issue is:open assignee:octocat', 'OCTOCAT')).toBe('my-issues')
   })
 
-  it('PR: returns prs only when state is open or null, else null', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
-    )
-
-    expect(derivationSection).toContain("state === 'open'")
-    expect(derivationSection).toContain("state === null")
-    expect(derivationSection).toContain("return 'prs'")
-    expect(derivationSection).toContain('return null')
+  it('does not treat unresolved or other-user qualifiers as presets', () => {
+    expect(derive('prs', 'is:pr is:open author:octocat')).toBeNull()
+    expect(derive('prs', 'is:pr is:open author:hubot', 'octocat')).toBeNull()
+    expect(derive('prs', 'is:pr is:open reviewed-by:octocat', 'octocat')).toBeNull()
+    expect(derive('issues', 'is:issue is:open assignee:hubot', 'octocat')).toBeNull()
   })
 
-  it('PR: guards kind before query checks', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
+  it('lets a matching personal qualifier win over a non-matching sibling qualifier', () => {
+    expect(derive('prs', 'is:pr is:open author:hubot review-requested:octocat', 'octocat')).toBe(
+      'review'
     )
-
-    const prsIndex = derivationSection.indexOf("activeGithubTaskKind === 'prs'")
-    const issuesIndex = derivationSection.indexOf("activeGithubTaskKind === 'issues'")
-    const authorIndex = derivationSection.indexOf('appliedTaskQuery.author')
-
-    // PR branch must come before Issues branch
-    expect(prsIndex).toBeGreaterThan(-1)
-    expect(prsIndex).toBeLessThan(authorIndex)
-    // Issues branch also gated on kind
-    expect(issuesIndex).toBeGreaterThan(authorIndex)
   })
 
-  // ── Issues kind derivation ──────────────────────────
-
-  it('Issues: derives my-issues from @me or gitHubLogin', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
-    )
-
-    expect(derivationSection).toContain("assignee === '@me'")
-    expect(derivationSection).toContain('assignee === gitHubLogin')
-    expect(derivationSection).toContain("return 'my-issues'")
+  it('guards closed and merged state before personal qualifiers', () => {
+    expect(derive('prs', 'is:pr is:closed author:@me', 'octocat')).toBeNull()
+    expect(derive('prs', 'is:pr is:merged review-requested:@me', 'octocat')).toBeNull()
+    expect(derive('issues', 'is:issue is:closed assignee:@me', 'octocat')).toBeNull()
   })
 
-  it('Issues: returns issues (Open) when state is open or null, else null', () => {
-    const derivationSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      'const derivedTaskPreset = useMemo<TaskViewPresetId | null>(',
-      'selectedGitHubRepoExternalLink = useMemo'
+  it('requests viewer identity only for an actual-login personal qualifier', () => {
+    expect(requiresGitHubViewerLogin('prs', parseTaskQuery('is:pr is:open author:octocat'))).toBe(
+      true
     )
-
-    // Inside the issues branch
-    const issuesBranch = derivationSection.slice(
-      derivationSection.indexOf("activeGithubTaskKind === 'issues'"),
-      derivationSection.lastIndexOf('return null')
-    )
-
-    expect(issuesBranch).toContain("state === 'open'")
-    expect(issuesBranch).toContain("state === null")
-    expect(issuesBranch).toContain("return 'issues'")
-    expect(issuesBranch).toContain('return null')
+    expect(
+      requiresGitHubViewerLogin('prs', parseTaskQuery('is:pr is:open review-requested:@me'))
+    ).toBe(false)
+    expect(
+      requiresGitHubViewerLogin('issues', parseTaskQuery('is:issue is:closed assignee:octocat'))
+    ).toBe(false)
   })
 
-  // ── Data source ─────────────────────────────────────
-
-  it('loads gitHubLogin from window.api.gh.viewer()', () => {
-    const viewerSection = sourceBetween(
-      TASK_PAGE_SOURCE,
-      "const [gitHubLogin, setGitHubLogin] = useState<string | null>(null)",
-      'paginationGenerationRef = useRef(0)'
+  it('wires the pure derivation to preset button highlighting', () => {
+    const source = readFileSync(join(__dirname, 'TaskPage.tsx'), 'utf8')
+    expect(source).toContain(
+      'deriveGitHubTaskPreset(activeGithubTaskKind, appliedTaskQuery, gitHubLogin)'
     )
-
-    expect(viewerSection).toContain("window.api.gh.viewer()")
-    expect(viewerSection).toContain("setGitHubLogin(viewer.login)")
+    expect(source).toContain('requiresGitHubViewerLogin(activeGithubTaskKind, appliedTaskQuery)')
+    expect(source).not.toContain('window.api.gh.viewer()')
+    expect(source).toContain('const active = derivedTaskPreset === option.id')
   })
 })

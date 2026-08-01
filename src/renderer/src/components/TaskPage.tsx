@@ -370,6 +370,11 @@ import {
   type LinearOrderBy,
   type LinearViewMode
 } from '@/components/task-page-localized-options'
+import { useGitHubViewerLogin } from '@/components/task-page-github-viewer-login'
+import {
+  deriveGitHubTaskPreset,
+  requiresGitHubViewerLogin
+} from '@/components/task-page-preset-highlight'
 
 function isGitLabMRFilter(value: GitLabTaskFilter | GitLabIssueFilter): value is GitLabTaskFilter {
   return value === 'opened' || value === 'merged' || value === 'closed' || value === 'all'
@@ -3771,18 +3776,6 @@ export default function TaskPage(): React.JSX.Element {
   const lastFetchedNonceRef = useRef(-1)
   // Why: invalidation-nonce analog of lastFetchedNonceRef; a preference flip must force past fetch-dedupe or the fan-out collapses onto a stale in-flight request from the pre-flip source.
   const lastFetchedInvalidationNonceRef = useRef(0)
-  const [gitHubLogin, setGitHubLogin] = useState<string | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    void window.api.gh.viewer().then((viewer) => {
-      if (!cancelled && viewer) {
-        setGitHubLogin(viewer.login)
-      }
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [])
   const paginationGenerationRef = useRef(0)
   // Why: entering Tasks with fresh cache still verifies remote status once, reconciled into existing rows to avoid a full table shuffle.
   const landingGitHubRefreshKeysRef = useRef<ReadonlySet<string>>(new Set())
@@ -5769,22 +5762,24 @@ export default function TaskPage(): React.JSX.Element {
 
   const activeGithubTaskKind = getGitHubTaskKind(activeTaskPreset, appliedTaskSearch)
   const appliedTaskQuery = useMemo(() => parseTaskQuery(appliedTaskSearch), [appliedTaskSearch])
-  // Why: derive the highlighted preset tab from the current query so that
-  // changing filter dropdowns automatically updates which tab is active.
-  const derivedTaskPreset = useMemo<TaskViewPresetId | null>(() => {
-    if (activeGithubTaskKind === 'prs') {
-      if (appliedTaskQuery.author === '@me' || appliedTaskQuery.author === gitHubLogin) return 'my-prs'
-      if (appliedTaskQuery.reviewRequested === '@me' || appliedTaskQuery.reviewRequested === gitHubLogin) return 'review'
-      if (appliedTaskQuery.state === 'open' || appliedTaskQuery.state === null) return 'prs'
-      return null
-    }
-    if (activeGithubTaskKind === 'issues') {
-      if (appliedTaskQuery.assignee === '@me' || appliedTaskQuery.assignee === gitHubLogin) return 'my-issues'
-      if (appliedTaskQuery.state === 'open' || appliedTaskQuery.state === null) return 'issues'
-      return null
-    }
-    return null
-  }, [activeGithubTaskKind, appliedTaskQuery, gitHubLogin])
+  const gitHubViewerLoginScopes = useMemo(
+    () =>
+      selectedRepos.map((repo) => ({
+        repoId: repo.id,
+        repoPath: repo.path,
+        sourceContext: getTaskPageRepoSourceContext(repo, 'github')
+      })),
+    [selectedRepos]
+  )
+  const shouldLoadGitHubViewerLogin =
+    taskSource === 'github' &&
+    githubMode === 'items' &&
+    requiresGitHubViewerLogin(activeGithubTaskKind, appliedTaskQuery)
+  const gitHubLogin = useGitHubViewerLogin(shouldLoadGitHubViewerLogin, gitHubViewerLoginScopes)
+  const derivedTaskPreset = useMemo(
+    () => deriveGitHubTaskPreset(activeGithubTaskKind, appliedTaskQuery, gitHubLogin),
+    [activeGithubTaskKind, appliedTaskQuery, gitHubLogin]
+  )
   const selectedGitHubRepoExternalLink = useMemo(() => {
     if (selectedRepos.length !== 1) {
       return null

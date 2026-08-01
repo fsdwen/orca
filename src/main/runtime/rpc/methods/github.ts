@@ -43,6 +43,10 @@ const RateLimit = z.object({
   force: z.boolean().optional()
 })
 
+const Viewer = RepoSelector.extend({
+  host: OptionalString
+})
+
 const SlugRepo = z.object({
   owner: requiredString('Missing owner'),
   repo: requiredString('Missing repo'),
@@ -343,6 +347,11 @@ export const GITHUB_METHODS: RpcMethod[] = [
     name: 'github.rateLimit',
     params: RateLimit,
     handler: async (params, { runtime }) => runtime.getGitHubRateLimit(params)
+  }),
+  defineMethod({
+    name: 'github.viewer',
+    params: Viewer,
+    handler: async (params, { runtime }) => runtime.getGitHubViewer(params.repo, params.host)
   }),
   defineMethod({
     name: 'github.listWorkItems',
