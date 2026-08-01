@@ -46,10 +46,10 @@ describe('github RPC methods', () => {
     const dispatcher = new RpcDispatcher({ runtime, methods: GITHUB_METHODS })
 
     const response = await dispatcher.dispatch(
-      makeRequest('github.viewer', { repo: 'repo-1', host: 'ghe.example.com' })
+      makeRequest('github.viewer', { repo: 'repo-1', host: 'ghe.example.com', force: true })
     )
 
-    expect(runtime.getGitHubViewer).toHaveBeenCalledWith('repo-1', 'ghe.example.com')
+    expect(runtime.getGitHubViewer).toHaveBeenCalledWith('repo-1', 'ghe.example.com', true)
     expect(response).toMatchObject({
       ok: true,
       result: { login: 'octocat', email: null }

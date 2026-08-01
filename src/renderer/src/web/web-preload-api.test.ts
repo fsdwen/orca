@@ -3735,6 +3735,7 @@ describe('web GitHub preload API', () => {
         args: {
           repoPath,
           repoId: 'repo-1',
+          force: true,
           sourceContext: {
             providerIdentity: { provider: 'github', host: 'ghe.example.com' }
           }
@@ -3743,6 +3744,7 @@ describe('web GitHub preload API', () => {
         expectedParams: {
           repoPath,
           repoId: 'repo-1',
+          force: true,
           repo: 'id:repo-1',
           host: 'ghe.example.com',
           sourceContext: {

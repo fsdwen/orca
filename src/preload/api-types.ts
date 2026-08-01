@@ -1689,6 +1689,7 @@ export type PreloadApi = {
       repoPath: string
       repoId?: string
       sourceContext?: TaskSourceContext | null
+      force?: boolean
     }) => Promise<GitHubViewer | null>
     repoSlug: (args: {
       repoPath: string

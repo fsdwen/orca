@@ -102,6 +102,21 @@ describe('getAuthenticatedViewer', () => {
     expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(2)
   })
 
+  it('bypasses a cached identity on an explicit refresh', async () => {
+    ghExecFileAsyncMock
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ login: 'octocat' }), stderr: '' })
+      .mockResolvedValueOnce({ stdout: JSON.stringify({ login: 'hubot' }), stderr: '' })
+
+    await expect(getAuthenticatedViewer({ host: 'github.com' })).resolves.toMatchObject({
+      login: 'octocat'
+    })
+    await expect(
+      getAuthenticatedViewer({ host: 'github.com', force: true })
+    ).resolves.toMatchObject({ login: 'hubot' })
+
+    expect(ghExecFileAsyncMock).toHaveBeenCalledTimes(2)
+  })
+
   it('returns and briefly caches null when the CLI lookup fails', async () => {
     ghExecFileAsyncMock.mockRejectedValue(new Error('not authenticated'))
 

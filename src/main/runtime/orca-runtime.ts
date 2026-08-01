@@ -18153,14 +18153,16 @@ export class OrcaRuntimeService {
 
   async getGitHubViewer(
     repoSelector: string,
-    host?: string
+    host?: string,
+    force?: boolean
   ): Promise<Awaited<ReturnType<typeof getAuthenticatedViewer>>> {
     const repo = await this.resolveRepoSelector(repoSelector)
     return getAuthenticatedViewer({
       ...(repo.connectionId
         ? {}
         : { cwd: repo.path, ...this.getLocalGitExecutionOptionArgs(repo)[0] }),
-      ...(host ? { host } : {})
+      ...(host ? { host } : {}),
+      ...(force === undefined ? {} : { force })
     })
   }
 

@@ -44,7 +44,8 @@ const RateLimit = z.object({
 })
 
 const Viewer = RepoSelector.extend({
-  host: OptionalString
+  host: OptionalString,
+  force: z.boolean().optional()
 })
 
 const SlugRepo = z.object({
@@ -351,7 +352,8 @@ export const GITHUB_METHODS: RpcMethod[] = [
   defineMethod({
     name: 'github.viewer',
     params: Viewer,
-    handler: async (params, { runtime }) => runtime.getGitHubViewer(params.repo, params.host)
+    handler: async (params, { runtime }) =>
+      runtime.getGitHubViewer(params.repo, params.host, params.force)
   }),
   defineMethod({
     name: 'github.listWorkItems',

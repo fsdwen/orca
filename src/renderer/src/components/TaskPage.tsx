@@ -5775,7 +5775,11 @@ export default function TaskPage(): React.JSX.Element {
     taskSource === 'github' &&
     githubMode === 'items' &&
     requiresGitHubViewerLogin(activeGithubTaskKind, appliedTaskQuery)
-  const gitHubLogin = useGitHubViewerLogin(shouldLoadGitHubViewerLogin, gitHubViewerLoginScopes)
+  const gitHubLogin = useGitHubViewerLogin(
+    shouldLoadGitHubViewerLogin,
+    gitHubViewerLoginScopes,
+    taskRefreshNonce
+  )
   const derivedTaskPreset = useMemo(
     () => deriveGitHubTaskPreset(activeGithubTaskKind, appliedTaskQuery, gitHubLogin),
     [activeGithubTaskKind, appliedTaskQuery, gitHubLogin]

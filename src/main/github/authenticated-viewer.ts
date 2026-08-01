@@ -3,6 +3,7 @@ import { acquire, ghExecFileAsync, release } from './gh-utils'
 
 type GitHubViewerExecutionOptions = {
   cwd?: string
+  force?: boolean
   host?: string
   wslDistro?: string
 }
@@ -65,18 +66,19 @@ async function queryAuthenticatedViewer(
 export function getAuthenticatedViewer(
   options: GitHubViewerExecutionOptions = {}
 ): Promise<GitHubViewer | null> {
-  const key = cacheKey(options)
+  const { force = false, ...executionOptions } = options
+  const key = cacheKey(executionOptions)
   const now = Date.now()
   pruneCache(now)
   const cached = cache.get(key)
-  if (cached && cached.expiresAt > now) {
+  if (!force && cached && cached.expiresAt > now) {
     return Promise.resolve(cached.value)
   }
   const pending = inFlight.get(key)
   if (pending) {
     return pending
   }
-  const request = queryAuthenticatedViewer(options).then((viewer) => {
+  const request = queryAuthenticatedViewer(executionOptions).then((viewer) => {
     cache.set(key, {
       value: viewer,
       expiresAt: Date.now() + (viewer ? POSITIVE_TTL_MS : NEGATIVE_TTL_MS)

@@ -1332,11 +1332,13 @@ describe('registerGitHubHandlers', () => {
           repo: 'orca',
           host: 'ghe.example.com'
         }
-      }
+      },
+      force: true
     })
 
     expect(getAuthenticatedViewerMock).toHaveBeenCalledWith({
       cwd: '/workspace/repo',
+      force: true,
       host: 'ghe.example.com',
       wslDistro: 'Ubuntu'
     })

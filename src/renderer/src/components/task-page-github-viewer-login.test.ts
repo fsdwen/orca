@@ -96,24 +96,65 @@ describe('loadGitHubViewerLogin', () => {
     expect(viewerMock).toHaveBeenCalledTimes(2)
   })
 
-  it('refreshes a mounted viewer login when the execution cache expires', async () => {
+  it('does not poll a mounted viewer login', async () => {
     vi.useFakeTimers()
     viewerMock
       .mockResolvedValueOnce({ login: 'octocat', email: null })
       .mockResolvedValueOnce({ login: 'hubot', email: null })
     const scopes = [scope('one', 'local')]
-    const { result, unmount } = renderHook(() => useGitHubViewerLogin(true, scopes))
+    const { result, unmount } = renderHook(() => useGitHubViewerLogin(true, scopes, 0))
+    await act(async () => {})
+
+    expect(result.current).toBe('octocat')
+    expect(viewerMock).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(60_000)
+    })
+
+    expect(result.current).toBe('octocat')
+    expect(viewerMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+    unmount()
+  })
+
+  it('refreshes after an explicit Tasks refresh', async () => {
+    viewerMock
+      .mockResolvedValueOnce({ login: 'octocat', email: null })
+      .mockResolvedValueOnce({ login: 'hubot', email: null })
+    const scopes = [scope('one', 'local')]
+    const { result, rerender } = renderHook(
+      ({ refreshKey }) => useGitHubViewerLogin(true, scopes, refreshKey),
+      { initialProps: { refreshKey: 0 } }
+    )
+    await act(async () => {})
+
+    expect(result.current).toBe('octocat')
+
+    rerender({ refreshKey: 1 })
+    await act(async () => {})
+
+    expect(result.current).toBe('hubot')
+    expect(viewerMock).toHaveBeenCalledTimes(2)
+    expect(viewerMock).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
+  })
+
+  it('refreshes once when the app returns to the foreground', async () => {
+    viewerMock
+      .mockResolvedValueOnce({ login: 'octocat', email: null })
+      .mockResolvedValueOnce({ login: 'hubot', email: null })
+    const scopes = [scope('one', 'local')]
+    const { result } = renderHook(() => useGitHubViewerLogin(true, scopes, 0))
     await act(async () => {})
 
     expect(result.current).toBe('octocat')
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(30_000)
+      document.dispatchEvent(new Event('visibilitychange'))
     })
 
     expect(result.current).toBe('hubot')
     expect(viewerMock).toHaveBeenCalledTimes(2)
-    unmount()
-    expect(vi.getTimerCount()).toBe(0)
+    expect(viewerMock).toHaveBeenLastCalledWith(expect.objectContaining({ force: true }))
   })
 })

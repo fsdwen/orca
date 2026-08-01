@@ -133,6 +133,7 @@ type RepoScopedArgs = {
   repoPath: string
   repoId?: string | null
   sourceContext?: TaskSourceContext | null
+  force?: boolean
 }
 
 type RegisteredRepoValidationResult =
@@ -1186,7 +1187,10 @@ export function registerGitHubHandlers(store: Store, stats: StatsCollector): voi
       return getAuthenticatedViewer()
     }
     const repo = assertRegisteredRepo(args, store)
-    return getAuthenticatedViewer(getViewerExecutionOptions(store, repo, args))
+    return getAuthenticatedViewer({
+      ...getViewerExecutionOptions(store, repo, args),
+      ...(args.force === undefined ? {} : { force: args.force })
+    })
   })
   // Star operations target the Orca repo itself — no repoPath validation needed
   ipcMain.handle('gh:checkOrcaStarred', () => checkOrcaStarred())

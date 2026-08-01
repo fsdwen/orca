@@ -1,7 +1,7 @@
 import { parseExecutionHostId } from '../../../shared/execution-host'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
 import type { GitHubViewer } from '../../../shared/types'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { callRuntimeRpc } from '../runtime/runtime-rpc-client'
 
 export type GitHubViewerLoginScope = {
@@ -10,8 +10,6 @@ export type GitHubViewerLoginScope = {
   sourceContext: TaskSourceContext | null
 }
 
-const RESOLVED_REFRESH_MS = 30_000
-const UNRESOLVED_REFRESH_MS = 5_000
 const inFlight = new Map<string, Promise<string | null>>()
 
 function githubHost(scope: GitHubViewerLoginScope): string | undefined {
@@ -37,7 +35,10 @@ function getGitHubViewerLoginRequestKey(scopes: readonly GitHubViewerLoginScope[
     .join('\u0001')
 }
 
-async function loadViewer(scope: GitHubViewerLoginScope): Promise<GitHubViewer | null> {
+async function loadViewer(
+  scope: GitHubViewerLoginScope,
+  force: boolean
+): Promise<GitHubViewer | null> {
   const host = githubHost(scope)
   const parsedHost = parseExecutionHostId(scope.sourceContext?.hostId)
   if (parsedHost?.kind === 'runtime') {
@@ -47,7 +48,8 @@ async function loadViewer(scope: GitHubViewerLoginScope): Promise<GitHubViewer |
       'github.viewer',
       {
         repo: `id:${repoId}`,
-        ...(host ? { host } : {})
+        ...(host ? { host } : {}),
+        ...(force ? { force: true } : {})
       },
       { timeoutMs: 15_000 }
     )
@@ -55,17 +57,21 @@ async function loadViewer(scope: GitHubViewerLoginScope): Promise<GitHubViewer |
   return window.api.gh.viewer({
     repoPath: scope.repoPath,
     repoId: scope.repoId,
-    sourceContext: scope.sourceContext
+    sourceContext: scope.sourceContext,
+    ...(force ? { force: true } : {})
   })
 }
 
 async function queryGitHubViewerLogin(
-  scopes: readonly GitHubViewerLoginScope[]
+  scopes: readonly GitHubViewerLoginScope[],
+  force: boolean
 ): Promise<string | null> {
   if (scopes.length === 0) {
     return null
   }
-  const viewers = await Promise.all(scopes.map((scope) => loadViewer(scope).catch(() => null)))
+  const viewers = await Promise.all(
+    scopes.map((scope) => loadViewer(scope, force).catch(() => null))
+  )
   const logins = viewers.flatMap((viewer) => {
     const login = viewer?.login.trim()
     return login ? [login] : []
@@ -78,14 +84,15 @@ async function queryGitHubViewerLogin(
 }
 
 export function loadGitHubViewerLogin(
-  scopes: readonly GitHubViewerLoginScope[]
+  scopes: readonly GitHubViewerLoginScope[],
+  force = false
 ): Promise<string | null> {
   const key = getGitHubViewerLoginRequestKey(scopes)
   const pending = inFlight.get(key)
   if (pending) {
     return pending
   }
-  const request = queryGitHubViewerLogin(scopes)
+  const request = queryGitHubViewerLogin(scopes, force)
   inFlight.set(key, request)
   void request.finally(() => {
     if (inFlight.get(key) === request) {
@@ -97,9 +104,11 @@ export function loadGitHubViewerLogin(
 
 export function useGitHubViewerLogin(
   enabled: boolean,
-  scopes: readonly GitHubViewerLoginScope[]
+  scopes: readonly GitHubViewerLoginScope[],
+  refreshKey: number
 ): string | null {
   const requestKey = useMemo(() => getGitHubViewerLoginRequestKey(scopes), [scopes])
+  const previousRefreshKey = useRef(refreshKey)
   const [state, setState] = useState<{ requestKey: string; login: string | null }>({
     requestKey: '',
     login: null
@@ -109,20 +118,30 @@ export function useGitHubViewerLogin(
       return
     }
     let stale = false
-    let refreshTimer: ReturnType<typeof setTimeout> | undefined
-    const refresh = (): void => {
-      void loadGitHubViewerLogin(scopes).then((login) => {
+    const refresh = (force: boolean): void => {
+      void loadGitHubViewerLogin(scopes, force).then((login) => {
         if (!stale) {
-          setState({ requestKey, login })
-          refreshTimer = setTimeout(refresh, login ? RESOLVED_REFRESH_MS : UNRESOLVED_REFRESH_MS)
+          setState((current) =>
+            current.requestKey === requestKey && current.login === login
+              ? current
+              : { requestKey, login }
+          )
         }
       })
     }
-    refresh()
+    const refreshWhenVisible = (): void => {
+      if (document.visibilityState === 'visible') {
+        refresh(true)
+      }
+    }
+    const force = previousRefreshKey.current !== refreshKey
+    previousRefreshKey.current = refreshKey
+    refresh(force)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
     return () => {
       stale = true
-      clearTimeout(refreshTimer)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [enabled, requestKey, scopes])
+  }, [enabled, refreshKey, requestKey, scopes])
   return enabled && state.requestKey === requestKey ? state.login : null
 }
