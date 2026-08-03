@@ -15,7 +15,10 @@ import {
   resolveActivityPortalSwap,
   type ActivityPortalThreadRef
 } from './activity-portal-thread-reconciliation'
-import type { ActivityPortalReadinessStatus } from './activity-portal-readiness-oscillation'
+import {
+  ACTIVITY_PORTAL_READINESS_MAX_FLIPS,
+  type ActivityPortalReadinessStatus
+} from './activity-portal-readiness-oscillation'
 
 const WORKTREE_ID = 'wt-1'
 const TAB_ID = 'tab-react185'
@@ -74,6 +77,37 @@ function installAnimationFrameController(): {
     },
     pending: () => callbacks.size
   }
+}
+
+async function flushPortalFramesUntil(
+  frames: ReturnType<typeof installAnimationFrameController>,
+  settled: () => boolean
+): Promise<void> {
+  for (let frame = 0; frame < 4 && !settled(); frame += 1) {
+    await frames.flush()
+  }
+}
+
+// Drain MutationObserver microtasks and the readiness rAF they schedule. Reports whether the
+// drain settled so a caller never reads a transition whose readiness callbacks are still queued.
+async function flushPortalReadiness(
+  frames: ReturnType<typeof installAnimationFrameController>
+): Promise<boolean> {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    await act(async () => {
+      await Promise.resolve()
+    })
+    if (frames.pending() === 0) {
+      await act(async () => {
+        await Promise.resolve()
+      })
+      if (frames.pending() === 0) {
+        return true
+      }
+    }
+    await frames.flush()
+  }
+  return frames.pending() === 0
 }
 
 // Models the tab-root DOM and sibling hiding emitted by a portaled TerminalPane.
@@ -307,7 +341,6 @@ describe('Activity portal pane switching', () => {
   })
 
   it('releases a latched readiness once the terminal attaches', async () => {
-    // Drive rAF explicitly — wall-clock waits flake under CI load.
     const frames = installAnimationFrameController()
     const target = document.createElement('div')
     document.body.append(target)
@@ -334,20 +367,11 @@ describe('Activity portal pane switching', () => {
     }
     buildRoot('hidden')
 
-    let churning = true
-    let churns = 0
     const statuses: ActivityPortalReadinessStatus[] = []
 
     function ActivityTerminalSlot(): null {
       const status = useActivityTerminalPortalStatus(target, PANE_A.paneKey)
       statuses.push(status)
-      useLayoutEffect(() => {
-        if (!churning || churns > 30) {
-          return
-        }
-        churns += 1
-        buildRoot(status === 'unavailable' ? 'sibling' : 'hidden')
-      })
       return null
     }
 
@@ -355,21 +379,48 @@ describe('Activity portal pane switching', () => {
     await act(async () => {
       root.render(<ActivityTerminalSlot />)
     })
-    for (let frame = 0; frame < 40; frame += 1) {
-      if (frames.pending() === 0 && statuses.at(-1) === 'unavailable') {
-        break
-      }
-      await frames.flush()
-    }
+    expect(await flushPortalReadiness(frames)).toBe(true)
+    await flushPortalFramesUntil(frames, () => statuses.at(-1) === 'unavailable')
     expect(statuses.at(-1)).toBe('unavailable')
 
-    churning = false
+    // Feed each DOM state separately and keep going until sibling DOM reports latched
+    // unavailable. A fixed 9-flip budget flakes when CI load drops MutationObserver
+    // deliveries below ACTIVITY_PORTAL_READINESS_MAX_FLIPS transitions.
+    let sawSiblingLoading = false
+    let sawLatchedSibling = false
+    for (
+      let flip = 0;
+      flip < ACTIVITY_PORTAL_READINESS_MAX_FLIPS * 4 && !sawLatchedSibling;
+      flip += 1
+    ) {
+      const mode = flip % 2 === 0 ? 'sibling' : 'hidden'
+      const statusesBefore = statuses.length
+      await act(async () => {
+        buildRoot(mode)
+        await Promise.resolve()
+      })
+      expect(await flushPortalReadiness(frames)).toBe(true)
+      if (mode !== 'sibling') {
+        continue
+      }
+      // Transition-local evidence: an unlatched subscription answers sibling DOM with 'loading',
+      // so the latch is only proven once a sibling transition that previously emitted 'loading'
+      // stops doing so and leaves 'unavailable' standing.
+      if (statuses.slice(statusesBefore).includes('loading')) {
+        sawSiblingLoading = true
+      } else if (sawSiblingLoading && statuses.at(-1) === 'unavailable') {
+        sawLatchedSibling = true
+      }
+    }
+    expect(sawLatchedSibling).toBe(true)
+    expect(statuses.at(-1)).toBe('unavailable')
+
     await act(async () => {
       buildRoot('ready')
+      await Promise.resolve()
     })
-    for (let frame = 0; frame < 10 && statuses.at(-1) !== 'ready'; frame += 1) {
-      await frames.flush()
-    }
+    expect(await flushPortalReadiness(frames)).toBe(true)
+    await flushPortalFramesUntil(frames, () => statuses.at(-1) === 'ready')
     expect(statuses.at(-1)).toBe('ready')
   })
 })

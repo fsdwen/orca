@@ -1,7 +1,7 @@
 /* eslint-disable max-lines */
 import { app, BrowserWindow, powerMonitor } from 'electron'
 import { is } from '@electron-toolkit/utils'
-import type { UpdateCheckOptions, UpdateStatus } from '../shared/types'
+import type { UpdateCheckOptions, UpdateSource, UpdateStatus } from '../shared/types'
 import type {
   RemoteServerUpdateInstallResult,
   RemoteServerUpdaterSnapshot,
@@ -45,7 +45,12 @@ import {
 } from './serve-update-handoff'
 import type { LocalBuildFeed } from './local-builds/local-build-feed-server'
 import { listReleaseBuilds, resolveTargetBuild } from './updater-release-builds'
-import type { ReleaseBuild, ReleaseChannel } from '../shared/release-channel'
+import {
+  hasDedicatedReleaseRepo,
+  isChannelSupportedOnPlatform,
+  type ReleaseBuild,
+  type ReleaseChannel
+} from '../shared/release-channel'
 
 type CheckFailureSource = 'event' | 'promise' | 'fallback-promise'
 type MissingManifestPrereleaseFallbackResult = { userInitiated: boolean }
@@ -142,7 +147,7 @@ let downloadInFlight = false
 /** Guards the macOS `activate` handler from reopening the old version while ShipIt replaces the .app bundle. */
 let quittingForUpdate = false
 let autoUpdater: ElectronAutoUpdater | null = null
-let activeUpdateSource: 'release' | 'local' | 'hourly' = 'release'
+let activeUpdateSource: 'release' | UpdateSource = 'release'
 let activeLocalBuildFeed: LocalBuildFeed | null = null
 let localBuildSelectionInProgress = false
 // Why: a dev channel/tag jump may target an older build, so it needs allowDowngrade
@@ -332,8 +337,8 @@ function getUpdateCheckVariant(options?: UpdateCheckOptions): UpdateCheckVariant
     return 'prerelease'
   }
   // Why: a persisted 'rc' override makes every routine check follow the RC series
-  // without the user re-holding shift; 'hourly' needs an explicit tag, so it is
-  // not a routine-check variant.
+  // without the user re-holding shift; the dev channels need an explicit tag, so
+  // neither is a routine-check variant.
   if (getReleaseChannelOverride?.() === 'rc') {
     return 'prerelease'
   }
@@ -1524,6 +1529,16 @@ async function checkForPinnedBuild(channel: ReleaseChannel, tag: string): Promis
     sendStatus({ state: 'not-available', userInitiated: true })
     return
   }
+  // Why here as well as in the picker: the renderer disables the option, but IPC
+  // is reachable regardless, and there is no artifact to install off-macOS.
+  if (!isChannelSupportedOnPlatform(channel, process.platform)) {
+    sendStatus({
+      state: 'error',
+      message: `${channel} builds are produced only for macOS.`,
+      userInitiated: true
+    })
+    return
+  }
   if (currentStatus.state === 'checking' || currentStatus.state === 'downloading') {
     return
   }
@@ -1538,7 +1553,7 @@ async function checkForPinnedBuild(channel: ReleaseChannel, tag: string): Promis
       return
     }
     closeLocalBuildFeed()
-    activeUpdateSource = channel === 'hourly' ? 'hourly' : 'release'
+    activeUpdateSource = hasDedicatedReleaseRepo(channel) ? channel : 'release'
     isPinnedBuildActive = true
     clearPrereleaseFallbackContext()
     clearPublishingWindowLastGoodCheck()
