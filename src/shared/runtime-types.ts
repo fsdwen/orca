@@ -659,6 +659,8 @@ export type RuntimeTerminalCreate = {
   warning?: string
   /** Present only for the structured host-authority resume path. */
   agentSessionDisposition?: 'created' | 'adopted'
+  /** The host attached this request to the existing stable pane owner. */
+  isReattach?: true
 }
 
 export type RuntimeTerminalSplit = {
@@ -672,6 +674,7 @@ export type RuntimeTerminalResolvePane = {
   tabId: string
   leafId: string
   ptyId: string | null
+  connected?: boolean
   worktreeId?: string
   executionHostId?: ExecutionHostId
   hostPlatform?: NodeJS.Platform
@@ -681,6 +684,12 @@ export type RuntimeTerminalFocus = {
   handle: string
   tabId: string
   worktreeId: string
+  /**
+   * Whether this request remained the winning applied host navigation when it settled.
+   * False also covers identity-only requests and unavailable host navigation.
+   * Optional for older clients; omit only when unknown.
+   */
+  navigated?: boolean
 }
 
 export type RuntimeTerminalClose = {
@@ -731,6 +740,8 @@ export type RuntimeWorktreeAgentRow = {
   /** When the current `state` was first reported (ms). Drives "Xm ago". */
   stateStartedAt: number
   updatedAt: number
+  /** See AgentStatusEntry.restoredUnconfirmed — set for hydrated nonterminal rows so clients don't render them as confirmed activity. */
+  restoredUnconfirmed?: boolean
 }
 
 export type RuntimeWorktreePsSummary = {

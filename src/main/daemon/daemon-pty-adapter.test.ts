@@ -1411,6 +1411,130 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(result.snapshot).toBeUndefined()
       expect(result.providerSequence).toEqual({ value: 0, generation: 'reset' })
     })
+
+    it('forwards attach-only and never creates an absent stable session', async () => {
+      const subprocessBeforeAttach = lastSubprocess
+      await expect(
+        adapter.spawn({
+          cols: 80,
+          rows: 24,
+          sessionId: 'missing-stable-pane-session',
+          attachOnly: true
+        })
+      ).rejects.toThrow('Session not found: missing-stable-pane-session')
+      expect(lastSubprocess).toBe(subprocessBeforeAttach)
+    })
+
+    it('does not inspect cold history for attach-only ownership checks', async () => {
+      const historyDir = join(dir, 'attach-only-history')
+      const historyAdapter = new DaemonPtyAdapter({
+        socketPath,
+        tokenPath,
+        historyPath: historyDir
+      })
+      const reader = (historyAdapter as unknown as { historyReader: HistoryReader }).historyReader
+      const probe = vi.spyOn(reader, 'probeRestorableHistory')
+      const getAppliedSize = vi.spyOn(historyAdapter, 'getAppliedSize')
+
+      try {
+        await expect(
+          historyAdapter.spawn({
+            cols: 80,
+            rows: 24,
+            sessionId: 'missing-attach-only-history-session',
+            attachOnly: true
+          })
+        ).rejects.toThrow('Session not found: missing-attach-only-history-session')
+        expect(probe).not.toHaveBeenCalled()
+        expect(getAppliedSize).not.toHaveBeenCalled()
+      } finally {
+        historyAdapter.dispose()
+      }
+    })
+
+    it('reattaches a stable pane through a preserved v30 daemon', async () => {
+      const ensureConnected = vi
+        .spyOn(DaemonClient.prototype, 'ensureConnected')
+        .mockResolvedValue()
+      const request = vi.spyOn(DaemonClient.prototype, 'request').mockResolvedValue({
+        isNew: false,
+        snapshot: null,
+        pid: 4321,
+        shellState: 'unsupported',
+        incarnationId: 'legacy-stable-pane-incarnation'
+      })
+      const legacy = new DaemonPtyAdapter({ socketPath, tokenPath, protocolVersion: 30 })
+      try {
+        await expect(
+          legacy.spawn({
+            cols: 80,
+            rows: 24,
+            sessionId: 'legacy-stable-pane-session',
+            attachOnly: true,
+            command: 'must-not-run'
+          })
+        ).resolves.toMatchObject({
+          id: 'legacy-stable-pane-session',
+          incarnationId: 'legacy-stable-pane-incarnation',
+          isReattach: true
+        })
+        expect(request).toHaveBeenCalledWith(
+          'createOrAttach',
+          expect.objectContaining({
+            command: undefined,
+            launchAgent: undefined,
+            startupCommandDelivery: undefined
+          })
+        )
+        expect(request.mock.calls[0]?.[1]).not.toHaveProperty('attachOnly')
+      } finally {
+        legacy.dispose()
+        request.mockRestore()
+        ensureConnected.mockRestore()
+      }
+    })
+
+    it('retires a replacement created by a raced-out v30 stable pane', async () => {
+      const ensureConnected = vi
+        .spyOn(DaemonClient.prototype, 'ensureConnected')
+        .mockResolvedValue()
+      const request = vi
+        .spyOn(DaemonClient.prototype, 'request')
+        .mockResolvedValueOnce({
+          isNew: true,
+          snapshot: null,
+          pid: 4321,
+          shellState: 'unsupported',
+          incarnationId: 'legacy-replacement-incarnation'
+        })
+        .mockResolvedValueOnce({})
+      const legacy = new DaemonPtyAdapter({ socketPath, tokenPath, protocolVersion: 30 })
+      try {
+        await expect(
+          legacy.spawn({
+            cols: 80,
+            rows: 24,
+            sessionId: 'raced-out-legacy-session',
+            attachOnly: true,
+            command: 'must-not-run'
+          })
+        ).rejects.toThrow('Session not found: raced-out-legacy-session')
+        expect(request).toHaveBeenNthCalledWith(
+          1,
+          'createOrAttach',
+          expect.objectContaining({ command: undefined })
+        )
+        expect(request).toHaveBeenNthCalledWith(2, 'kill', {
+          sessionId: 'raced-out-legacy-session',
+          immediate: true
+        })
+        expect(legacy.getActiveSessionIds()).toEqual([])
+      } finally {
+        legacy.dispose()
+        request.mockRestore()
+        ensureConnected.mockRestore()
+      }
+    })
   })
 
   describe('attach', () => {

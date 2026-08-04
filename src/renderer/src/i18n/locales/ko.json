@@ -4944,7 +4944,8 @@
           "failedSetParent": "상위 워크트리를 설정하지 못했습니다",
           "current": "현재",
           "searchPlaceholder": "워크트리 검색...",
-          "empty": "일치하는 적격 워크트리가 없습니다."
+          "empty": "일치하는 적격 워크트리가 없습니다.",
+          "setParentFor": "다음 워크트리의 상위 설정"
         },
         "WorktreeCardStatusSlot": {
           "branchIdentity": "브랜치"
@@ -7047,7 +7048,12 @@
           "4a342f44c1": "고급 연결",
           "e9609ddca6": "프록시, 점프 호스트, 연결 재사용",
           "8c922dffba": "더 빠른 설정을 위해 SSH 연결 재사용",
-          "53e9aabfc0": "사용 가능한 경우 OpenSSH 멀티플렉싱을 사용합니다. 사용자 지정 SSH 제한이 있는 호스트에서는 끄세요."
+          "53e9aabfc0": "사용 가능한 경우 OpenSSH 멀티플렉싱을 사용합니다. 사용자 지정 SSH 제한이 있는 호스트에서는 끄세요.",
+          "editTitle": "SSH 호스트 편집",
+          "addTitle": "SSH 호스트 추가",
+          "editDescription": "이 머신의 연결 세부 정보를 업데이트합니다. 변경 사항은 다음 연결 시 적용됩니다.",
+          "addDescription": "SSH로 로그인할 수 있는 영구 머신을 추가합니다.",
+          "editingPrefix": "편집 중"
         },
         "TasksPane": {
           "f71d8a9dd3": "작업 제공자",
@@ -10073,10 +10079,10 @@
             "653c105ecc": "더 많은 PR 작업",
             "f316a8ca2b": "선택한 해결되지 않은 댓글이 없습니다.",
             "d00ebdc402": "AI로 {{value0}} 댓글 해결",
-            "ed3f79c031": "agent를 시작하기 전에 prompt를 검토하세요. 선택한 스레드는 시작 후 해결됨으로 표시됩니다.",
-            "f273f2271c": "agent를 시작했습니다. {{value0}}개 해결됨으로 표시, {{value1}}개 건너뜀, {{value2}}개 실패.",
-            "aa95b81a3a": "agent를 시작했습니다. {{value0}}개 해결됨으로 표시, {{value1}}개 건너뜀, {{value2}}개 실패.",
-            "495b2f8c4b": "agent를 시작했지만 선택한 댓글을 해결됨으로 표시할 수 없습니다.",
+            "ed3f79c031": "에이전트를 시작하기 전에 프롬프트를 확인하세요. 프롬프트가 전달된 후 Orca가 선택한 댓글에 답글을 남기고 가능한 경우 호스트 스레드를 해결합니다.",
+            "f273f2271c": "agent를 시작했습니다. {{value0}}개 해결됨, {{value1}}개 답글, {{value2}}개 건너뜀, {{value3}}개 실패.{{value4}}",
+            "aa95b81a3a": "agent를 시작했습니다. {{value0}}개 해결됨, {{value1}}개 답글, {{value2}}개 건너뜀, {{value3}}개 실패.",
+            "495b2f8c4b": "agent를 시작했지만 선택한 댓글을 해결하거나 답글할 수 없습니다.",
             "3c3ad3a1d2": "agent를 시작했습니다. 호스트에서 해결됨으로 표시할 수 있는 선택된 댓글이 없습니다.",
             "review": {
               "auto_retry": "Orca가 {{time}}에 다시 시도합니다.",
@@ -10086,7 +10092,8 @@
             "sync": {
               "pending": "Syncing…",
               "branch": "Sync Branch"
-            }
+            },
+            "7e4b2a19c0": "답글을 게시할 GitHub PR을 확인하지 못했습니다."
           },
           "CreatePullRequestDialog": {
             "2bc1b4345e": "취소",
@@ -11196,9 +11203,14 @@
             "emptyConversationDetail": "이 세션에는 저장된 대화가 없어 재개할 수 없습니다.",
             "queuedMessages": "대기 중인 메시지 {{value0}}개",
             "subagentTranscripts": "서브에이전트 대화 기록 {{value0}}개",
+            "prompt": "프롬프트",
             "firstPrompt": "첫 프롬프트",
+            "recentPrompt": "최근 프롬프트",
             "firstPromptCopied": "첫 프롬프트를 복사했습니다",
+            "recentPromptCopied": "최근 프롬프트를 복사했습니다",
             "copyFirstPrompt": "첫 프롬프트 복사",
+            "copyRecentPrompt": "최근 프롬프트 복사",
+            "copyPrompt": "프롬프트 복사",
             "copied": "복사됨",
             "copy": "복사",
             "noFirstPromptAvailable": "첫 프롬프트를 사용할 수 없습니다",
@@ -11323,6 +11335,14 @@
           },
           "activityBar": {
             "error": "오류"
+          },
+          "AiVaultSessionLimitMenu": {
+            "historyDepth": "기록 개수: {{value0}}",
+            "performanceWarning": "더 많은 기록을 불러오면 특히 원격 호스트에서 앱 전체가 느려질 수 있습니다. 무제한은 사용 가능한 모든 기록을 스캔합니다.",
+            "recommended": "권장",
+            "mayBeSlower": "느려질 수 있음",
+            "slowest": "가장 느림",
+            "unlimited": "무제한"
           }
         }
       },
