@@ -16,7 +16,7 @@ describe('isDenseSgr', () => {
   })
 
   it('returns false for token/word-level styling (~1 SGR/10 chars)', () => {
-    const tokenLevel = '\x1b[32m' + 'token text '.repeat(10) + '\x1b[0m'
+    const tokenLevel = `\x1b[32m${'token text '.repeat(10)}\x1b[0m`
     expect(isDenseSgr(tokenLevel)).toBe(false)
   })
 
@@ -28,5 +28,10 @@ describe('isDenseSgr', () => {
   it('counts 256-color and truecolor SGR parameters as SGR', () => {
     const perChar = '\x1b[38;5;196mR\x1b[0m\x1b[38;2;1;2;3mG\x1b[0m'
     expect(isDenseSgr(perChar)).toBe(true)
+  })
+
+  it('uses one SGR per two characters as the inclusive threshold', () => {
+    expect(isDenseSgr('\x1b[31mXY')).toBe(true)
+    expect(isDenseSgr('\x1b[31mXYZ')).toBe(false)
   })
 })

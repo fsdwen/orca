@@ -42,7 +42,10 @@ function parseSgrParams(params: string): SimpleSgrState | null {
       return null
     }
     if (code === 0) {
-      return { ...EMPTY_STATE }
+      // Why: `\x1b[0;1m` resets AND sets attributes; keep parsing so the
+      // reported state reflects what the sequence actually sets.
+      index += 1
+      continue
     }
     if (
       code === 1 || code === 2 || code === 3 || code === 4 || code === 5 || code === 6 ||
@@ -332,7 +335,9 @@ export function normalizeSgrDensity(data: string): string {
       }
       out.push(data.slice(index, end))
       index = end
-      lastEmittedState = { ...EMPTY_STATE }
+      // Why: a string sequence does not change SGR state; only break the
+      // adjacent-merge rule so a later SGR is not deduped against the one
+      // emitted before the string.
       lastEmittedParams = null
       continue
     }

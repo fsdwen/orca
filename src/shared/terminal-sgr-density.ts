@@ -1,14 +1,7 @@
 /**
- * Dense-SGR density probe shared by the main delivery gate (input-protection
- * drop) and the renderer output scheduler (freeze/drop/parse-clock pacing).
- *
- * Why: character-level SGR styling parses ~50x slower than plain text in
- * xterm. The main gate must use the SAME threshold as the renderer scheduler,
- * or it would drop ordinary plain-text floods and TUI repaints (which parse
- * fine) while the user types.
+ * Dense-SGR probe shared by the main delivery gate and the renderer scheduler
+ * so both drop/freeze decisions use the SAME threshold.
  */
-
-/** Cheap density probe: does this chunk carry enough SGR styling to matter? */
 export function isDenseSgr(data: string): boolean {
   let sgrCount = 0
   let charCount = 0
@@ -29,9 +22,6 @@ export function isDenseSgr(data: string): boolean {
       index += 1
     }
   }
-  // Character-level highlighting emits ~1 SGR per character; the parse-starved
-  // threshold is one SGR per ~2 characters. Non-SGR CSI (cursor moves, DEC
-  // modes) does not count. Token/word-level styling (~1 per 10+ chars) parses
-  // fine and must NOT trip the input-protection freeze.
+  // Use one SGR per two non-CSI characters as the dense-output threshold.
   return charCount > 0 && sgrCount * 2 >= charCount
 }

@@ -31,7 +31,8 @@ import path from 'node:path'
 // Every character carries its own SGR color — the "syntax-highlighted log"
 // shape Orca assistant output takes when it streams colored code/diffs.
 // DENSITY: chars per SGR span (1 = worst case; 10 = token-ish; 0 = plain).
-const SGR_DENSITY = Number(process.env.DIAG_SGR_DENSITY ?? '1')
+const RAW_SGR_DENSITY = Number(process.env.DIAG_SGR_DENSITY ?? '1')
+const SGR_DENSITY = Number.isFinite(RAW_SGR_DENSITY) ? Math.max(0, RAW_SGR_DENSITY) : 1
 const SIDECAR_PATH = process.env.DIAG_SIDECAR_PATH ?? ''
 const SGR_SCRIPT = `
 import { appendFileSync } from 'node:fs'
@@ -118,7 +119,9 @@ test('diag: typing echo under dense-SGR output in same pane', async ({
   await installCodexEchoLatencyProbe(orcaPage, target)
   try {
     if (SCRIPT) {
-      await sendToTerminal(orcaPage, ptyId, `node ${JSON.stringify(scriptPath)}\r`)
+      // Why forward slashes: Node accepts them on Windows, and cmd/PowerShell
+      // do not unescape JSON-doubled backslashes.
+      await sendToTerminal(orcaPage, ptyId, `node "${scriptPath.replace(/\\/g, '/')}"\r`)
       // Let the stream start flowing, then type — the realistic shape is
       // typing WHILE the agent streams, not after minutes of accumulated output.
       await orcaPage.waitForTimeout(500)
@@ -150,7 +153,9 @@ test('diag: typing echo under dense-SGR output in same pane', async ({
       const sidecar = readFileSync(sidecarPath, 'utf8')
       const atMs: number[] = []
       for (const line of sidecar.split('\n')) {
-        if (!line.trim()) continue
+        if (!line.trim()) {
+          continue
+        }
         const entry = JSON.parse(line) as { atMs: number; chunk: string }
         for (const char of entry.chunk) {
           if (char >= 'a' && char <= 'z') {
@@ -189,7 +194,7 @@ test('diag: typing echo under dense-SGR output in same pane', async ({
       )
     }
     if (MODE === 'sgr' && sched && typeof sched.lastEchoWriteAt === 'number' && sched.lastEchoWriteAt > 0) {
-      const lastKeydown = keydownPageMs[keydownPageMs.length - 1]
+      const lastKeydown = keydownPageMs.at(-1)
       const writeDelay = sched.lastEchoWriteAt - lastKeydown
       console.log(`[diag:${MODE}] lastEchoWriteAt - lastKeydown = ${writeDelay.toFixed(1)}ms`)
     }

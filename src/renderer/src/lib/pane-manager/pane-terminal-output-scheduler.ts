@@ -125,6 +125,7 @@ const inputProtectionRecoveryTimers = new WeakMap<
   ReturnType<typeof setTimeout>
 >()
 
+/** Opens the terminal's input window and re-arms the recovery drain. */
 export function markTerminalUserInput(terminal: TerminalOutputTarget): void {
   const now = performance.now()
   lastUserInputAtByTerminal.set(terminal, now)
@@ -145,15 +146,27 @@ export function markTerminalUserInput(terminal: TerminalOutputTarget): void {
   )
 }
 
+/** Any terminal received input within the protection window. */
 function hasRecentAnyInput(): boolean {
   return performance.now() - lastAnyUserInputAt <= FOREGROUND_INPUT_PROTECTION_WINDOW_MS
 }
 
+/** This terminal received input within the protection window. */
 function hasRecentTerminalInput(terminal: TerminalOutputTarget): boolean {
   const lastInputAt = lastUserInputAtByTerminal.get(terminal)
   return (
     lastInputAt !== undefined &&
     performance.now() - lastInputAt <= FOREGROUND_INPUT_PROTECTION_WINDOW_MS
+  )
+}
+
+// Why shared: write paths and the debug snapshot must agree on what trips the
+// input-protection drop, or diagnostics report a drop that never fires.
+function shouldDropInputProtectedBacklog(entry: QueueEntry): boolean {
+  return (
+    entry.denseSgr &&
+    hasRecentTerminalInput(entry.terminal) &&
+    entry.queuedChars > FOREGROUND_INPUT_SENSITIVE_BACKLOG_CHARS
   )
 }
 
@@ -164,14 +177,17 @@ function hasRecentTerminalInput(terminal: TerminalOutputTarget): boolean {
 // keystroke echo waits behind (the "agent output makes typing lag" bug).
 const inFlightBatchesByTerminal = new WeakMap<TerminalOutputTarget, number>()
 
+/** Delivered-but-unparsed batch count for a terminal. */
 function getInFlightBatches(terminal: TerminalOutputTarget): number {
   return inFlightBatchesByTerminal.get(terminal) ?? 0
 }
 
+/** Counts a delivered batch as pending parse completion. */
 function markBatchDelivered(terminal: TerminalOutputTarget): void {
   inFlightBatchesByTerminal.set(terminal, getInFlightBatches(terminal) + 1)
 }
 
+/** Decrements the pending batch count once parse completes. */
 function markBatchParsed(terminal: TerminalOutputTarget): void {
   const remaining = getInFlightBatches(terminal) - 1
   if (remaining > 0) {
@@ -363,10 +379,8 @@ function exposeDebugApi(): void {
         ...debugState,
         drainWrites: [...debugState.drainWrites],
         hasRecentInput: hasRecentAnyInput(),
-        inputProtectionDropPending: Array.from(queuedByTerminal.values()).some(
-          (entry) =>
-            hasRecentTerminalInput(entry.terminal) &&
-            entry.queuedChars > FOREGROUND_INPUT_SENSITIVE_BACKLOG_CHARS
+        inputProtectionDropPending: Array.from(queuedByTerminal.values()).some((entry) =>
+          shouldDropInputProtectedBacklog(entry)
         )
       }
     }
@@ -1006,6 +1020,10 @@ function composeParsedCallback(
 // decrement it. Flush/echo completions share xterm's FIFO but were never
 // counted, so they must NOT decrement (a spurious decrement would re-open the
 // flood gate early and re-grow the in-xterm FIFO ahead of keystroke echo).
+/**
+ * Parsed callback for drain-delivered batches: also decrements the parse-clock
+ * in-flight bound, paces the next drain, and settles the stall watch.
+ */
 function composeDrainParsedCallback(
   terminal: TerminalOutputTarget,
   onParsed: TerminalOutputParsedCallback | undefined,
@@ -1240,11 +1258,7 @@ export function writeTerminalOutput(
       // Why: inside the input window a parse-starved flood (dense SGR) parks
       // the keystroke echo behind this backlog in xterm's FIFO; drop it so
       // echo latency stays bounded. Fires once per entry (backgroundBacklogDropped).
-      if (
-        hasRecentTerminalInput(terminal) &&
-        queued.denseSgr &&
-        queued.queuedChars > FOREGROUND_INPUT_SENSITIVE_BACKLOG_CHARS
-      ) {
+      if (shouldDropInputProtectedBacklog(queued)) {
         replaceBacklogWithWarning(queued, FOREGROUND_BACKLOG_WARNING)
         scheduleDrain(0)
         return
@@ -1344,11 +1358,7 @@ export function writeTerminalOutput(
       }
       if (queueCapExceeded(queued)) {
         replaceBacklogWithWarning(queued, FOREGROUND_BACKLOG_WARNING)
-      } else if (
-        hasRecentTerminalInput(terminal) &&
-        queued.denseSgr &&
-        queued.queuedChars > FOREGROUND_INPUT_SENSITIVE_BACKLOG_CHARS
-      ) {
+      } else if (shouldDropInputProtectedBacklog(queued)) {
         // Why: inside the input window a parse-starved flood (dense SGR) parks
         // the keystroke echo behind this backlog in xterm's FIFO; drop it so
         // echo latency stays bounded. Fires once per entry (backgroundBacklogDropped).
@@ -1462,12 +1472,17 @@ export function flushTerminalOutput(
     })
     try {
       queuedWrite.beforeWrite?.(queuedWrite.data)
+      // Why: same SGR collapse as the drain path — a flushed dense-SGR backlog
+      // pays the same xterm parse cost otherwise.
+      const dataToWrite = normalizeSgrDensity(
+        queuedWrite.stripTransientCursorShows
+          ? removeTransientCursorShowSequences(queuedWrite.data)
+          : queuedWrite.data
+      )
       const writeAccepted = queuedWrite.foreground
         ? writeForegroundTerminalChunk(
             terminal,
-            queuedWrite.stripTransientCursorShows
-              ? removeTransientCursorShowSequences(queuedWrite.data)
-              : queuedWrite.data,
+            dataToWrite,
             {
               forceViewportRefresh: queuedWrite.forceForegroundRefresh,
               followupViewportRefresh: queuedWrite.followupForegroundRefresh,
@@ -1483,7 +1498,7 @@ export function flushTerminalOutput(
           )
         : writeBackgroundTerminalChunk(
             terminal,
-            queuedWrite.data,
+            dataToWrite,
             composeParsedCallback(terminal, queuedWrite.onParsed, ackCreditsParsed, undefined),
             composeWriteFailureCallback(terminal, ackCreditsParsed)
           )
@@ -1591,6 +1606,8 @@ export function discardTerminalOutput(terminal: TerminalOutputTarget): void {
   }
   discardInFlightTerminalOutputAckCredits(terminal)
   queuedByTerminal.delete(terminal)
+  // Why: a reused terminal object must not inherit stale in-flight batches, or dense-SGR drains stay gated forever.
+  inFlightBatchesByTerminal.delete(terminal)
   discardForegroundRenderSettle(terminal)
   // Why: cancel the watch without masquerading as parse progress; replay guards use real completions to tell slow from wedged.
   cancelTerminalWriteStallWatch(terminal)

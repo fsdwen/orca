@@ -2439,6 +2439,7 @@ export function registerPtyHandlers(
   // and always pass; the renderer-side freeze+drop is the primary guard.
   const PTY_INPUT_PROTECTION_DROP_MIN_CHARS = PTY_BATCH_FLUSH_CHUNK_CHARS
   let inputProtectionDroppedChars = 0
+  /** True within the input window of the pty's last keystroke. */
   const isInsidePtyInputProtectionWindow = (id: string): boolean => {
     const lastInputAt = lastInputAtByPty.get(id)
     return (
@@ -2446,6 +2447,7 @@ export function registerPtyHandlers(
       performance.now() - lastInputAt <= PTY_INPUT_PROTECTION_DROP_WINDOW_MS
     )
   }
+  /** Counts dropped flood chars and breadcrumbs them for diagnostics. */
   const recordInputProtectionDrop = (id: string, chars: number): void => {
     inputProtectionDroppedChars += chars
     mainDeliveryBreadcrumbs.record('input-protection-drop', {
@@ -3620,6 +3622,21 @@ export function registerPtyHandlers(
       isDenseSgr(payload.data)
     ) {
       recordInputProtectionDrop(payload.id, rawLength)
+      if (projectionId) {
+        sshOutputIntake?.transferProjections([projectionId], 'input-protection-drop')
+      }
+      // Why: a mid-stream gap corrupts the pane; the sentinel repaints from
+      // main's authoritative buffer and realigns by sequence. Query bytes ride
+      // along so reply-eliciting probes (DSR/CPR, DA, DECRQM, OSC 10/11) in the
+      // dropped chunk still reach the program.
+      sendPtyDataToRenderer(payload.id, {
+        id: payload.id,
+        data: extractDroppedPtyQueryBytes(payload.data).slice(
+          0,
+          DROPPED_QUERY_SALVAGE_MAX_CHARS
+        ),
+        droppedOutput: true
+      })
       return
     }
     const containsBackgroundOutput =

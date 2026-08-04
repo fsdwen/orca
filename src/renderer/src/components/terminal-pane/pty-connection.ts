@@ -3998,10 +3998,6 @@ export function connectPanePty(
   )
 
   const onDataDisposable = pane.terminal.onData((data) => {
-    // Why: input must mark the scheduler's input window even when the
-    // internal core onUserInput API is unavailable; the echo-latency drop
-    // depends on it. Harmless for parser auto-replies (only widens the window).
-    markTerminalUserInput(pane.terminal)
     // Why: xterm auto-replies to embedded query sequences (DA1, DECRQM,
     // OSC 10/11, focus, CPR) via onData. When we replay recorded PTY bytes
     // into xterm for scrollback/cold-restore/snapshot, those queries would
@@ -4067,6 +4063,10 @@ export function connectPanePty(
       clearPendingTerminalInputIntent()
       return
     }
+    // Why: fallback for builds without the core onUserInput signal; placed
+    // after the replay, lock, stale, and query-reply guards so the scheduler's
+    // input window opens for real input only.
+    markTerminalUserInput(pane.terminal)
     const intent = pendingTerminalInputIntent
     // Why: real xterm can deliver the terminal byte even when our DOM keydown
     // listener missed the press. Exact Ctrl+C/Escape bytes are still safe to
