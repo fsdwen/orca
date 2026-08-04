@@ -150,6 +150,7 @@ import { getRemoteRuntimePtyEnvironmentId } from '@/runtime/runtime-terminal-str
 import {
   discardTerminalOutput,
   flushTerminalOutput,
+  markTerminalUserInput,
   registerTerminalBacklogRecovery,
   waitForTerminalOutputParsed,
   writeTerminalOutput
@@ -3679,6 +3680,9 @@ export function connectPanePty(
     lastTerminalInputAt = performance.now()
     // Why: input must probe a wedged xterm even when the PTY produces no renderer output.
     requestTerminalWritePipelineProbe(pane.terminal)
+    // Why: the output scheduler drops parse-starved foreground backlog inside
+    // the input window so keystroke echo doesn't queue behind a dense-SGR flood.
+    markTerminalUserInput(pane.terminal)
   }
   const recordTerminalInputForHibernation = (): void => {
     useAppStore.getState().recordTerminalInput(cacheKey)
@@ -3693,6 +3697,9 @@ export function connectPanePty(
     recordTerminalInputForHibernation()
     // Takeover must never fire from the onData fallback below: it mixes in auto-replies.
     reportWorkerTerminalUserInput(cacheKey, runtimeEnvironmentId)
+    // Why: the output scheduler drops parse-starved foreground backlog inside
+    // the input window so keystroke echo doesn't queue behind a dense-SGR flood.
+    markTerminalUserInput(pane.terminal)
   }
   const userInputActivityDisposable = subscribeToTerminalUserInput(
     pane.terminal,
@@ -3991,6 +3998,10 @@ export function connectPanePty(
   )
 
   const onDataDisposable = pane.terminal.onData((data) => {
+    // Why: input must mark the scheduler's input window even when the
+    // internal core onUserInput API is unavailable; the echo-latency drop
+    // depends on it. Harmless for parser auto-replies (only widens the window).
+    markTerminalUserInput(pane.terminal)
     // Why: xterm auto-replies to embedded query sequences (DA1, DECRQM,
     // OSC 10/11, focus, CPR) via onData. When we replay recorded PTY bytes
     // into xterm for scrollback/cold-restore/snapshot, those queries would
