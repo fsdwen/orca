@@ -293,7 +293,8 @@
           "3be0f7df04": "Cannot open folder on selected runtime",
           "15cf5319ec": "{{path}} was checked on {{hostName}}, but that host did not report a usable folder.",
           "2dcd706774": "Project also exists in another profile",
-          "presenceProfileOverflow": "{{names}} +{{count}} more"
+          "presenceProfileOverflow": "{{names}} +{{count}} more",
+          "removeProjectFailed": "Failed to remove project"
         },
         "settings": {
           "e12dab333b": "Failed to switch servers",
@@ -4309,7 +4310,9 @@
           "ee240a39eb": "Edit filters",
           "automationCreated": "Hide automation-created",
           "cliCreated": "Hide CLI-created",
-          "detachedHead": "Hide detached HEAD"
+          "detachedHead": "Hide detached HEAD",
+          "keepDefaultBranch": "Except default branch",
+          "keepDefaultBranchAria": "Keep the default branch visible while hiding sleeping workspaces"
         },
         "SidebarHeader": {
           "25a95899c9": "Add Project",
@@ -4374,7 +4377,9 @@
           "82594419ba": "Filters",
           "automationCreated": "Hide automation-created",
           "cliCreated": "Hide CLI-created",
-          "detachedHead": "Hide detached HEAD"
+          "detachedHead": "Hide detached HEAD",
+          "keepDefaultBranch": "Except default branch",
+          "keepDefaultBranchAria": "Keep the default branch visible while hiding sleeping workspaces"
         },
         "sidebarHostOptions": {
           "3e102f111c": "All hosts",
@@ -4769,7 +4774,8 @@
               "0899ebdb28": "Git already forgot this workspace, but its directory is still on disk. Use Force Delete to remove the orphaned directory.",
               "locked": "This workspace is locked by Git. Run git worktree unlock <worktree-path> from its repository, then retry deletion.",
               "lockedReason": "This workspace is locked by Git. Git reported: {{value0}}. Run git worktree unlock <worktree-path> from its repository, then retry deletion.",
-              "unstoppedPty": "Orca could not confirm every terminal in this workspace has exited, so it stopped before deleting any files. Use Force Delete to remove it anyway."
+              "unstoppedPty": "Orca could not confirm every terminal in this workspace has exited, so it stopped before deleting any files. Use Force Delete to remove it anyway.",
+              "unstoppedPtyLive": "This workspace still has running terminals, so Orca stopped before deleting any files. Force Delete will kill them and discard any uncommitted work they hold."
             }
           }
         },
@@ -5083,15 +5089,40 @@
           "pairingCommand": "orca serve --pairing-address <host>",
           "pairingHelpSuffix": "on the server and paste the printed pairing URL.",
           "sshImportAlreadySynced": "~/.ssh/config already in sync.",
-          "sshImportSynced": "Synced {{value0}} host{{value1}}.",
+          "sshImportSynced": "Added {{value0}} host{{value1}} to Orca.",
           "sshImportFailed": "Failed to import SSH config.",
-          "importing": "Importing...",
-          "importSshConfig": "Import ~/.ssh/config",
+          "sshAlreadyExists": "That SSH host is already in Orca.",
           "advanced": "Advanced",
           "linkDestination": "Link destination",
           "sshTunnel": "I am using an SSH tunnel",
           "sshTunnelHelp": "Otherwise, this link points back to this device and cannot identify the other computer.",
-          "loopbackBlocked": "Enable the SSH tunnel override or create a new link using the other host’s Tailscale or LAN address."
+          "loopbackBlocked": "Enable the SSH tunnel override or create a new link using the other host’s Tailscale or LAN address.",
+          "sshConfigPickerLoadFailed": "Failed to read ~/.ssh/config.",
+          "sshConfigPickerResolveFailed": "Failed to resolve that SSH config host.",
+          "sshConfigPickerRestartRequired": "Restart Orca to finish applying the SSH config picker update.",
+          "sshConfigPickerFilled": "Filled from {{value0}}. Review and Save.",
+          "sshConfigPickerTitle": "Choose from ~/.ssh/config",
+          "sshConfigPickerDescription": "Pick a host to fill the form. Nothing is saved until you click Save.",
+          "sshConfigPickerFilter": "Filter hosts…",
+          "sshConfigPickerHostsLabel": "SSH config hosts",
+          "sshConfigPickerLoading": "Reading ~/.ssh/config…",
+          "sshConfigPickerEmpty": "No hosts in ~/.ssh/config",
+          "sshConfigPickerNoMatch": "No matching hosts",
+          "sshConfigPickerEmptyHint": "Add a Host entry there, or go back and type the details manually.",
+          "sshConfigPickerNoMatchHint": "Try another filter, or go back and type manually.",
+          "sshConfigPickerMoreResults": "Showing the first {{value0}} matches. Narrow your filter to find more.",
+          "sshConfigPickerInOrca": "In Orca",
+          "sshConfigPickerPreviouslyRemoved": "Removed from Orca",
+          "sshConfigPickerBulkHint": "Bulk sync stays in Settings → SSH",
+          "sshConfigPickerBack": "Back",
+          "fillFromSshConfig": "Fill from ~/.ssh/config…",
+          "sshConfigPickerAddingAll": "Adding hosts…",
+          "sshConfigPickerAddAll": "Add all {{value0}} to Orca",
+          "sshConfigPickerNoNewHosts": "No new hosts to add",
+          "sshConfigPickerAddAllEmpty": "Add all to Orca",
+          "identityFileFromConfigHint": "Left empty on purpose: Orca uses every key ~/.ssh/config resolves for {{value0}}. Type a path to use just that key.",
+          "sshConfigPickerRetry": "Try again",
+          "sshConfigPickerResolving": "Reading…"
         },
         "ForgetSshWorkspaceDialog": {
           "reconnectFailed": "Reconnection failed",
@@ -6615,7 +6646,10 @@
           "f79972271a": "No GitHub remote found for this repo.",
           "4d039317f4": "Website favicon",
           "acf31559a0": "Enter a valid website URL.",
-          "868c5c9b56": "Failed to import repo icon"
+          "868c5c9b56": "Failed to import repo icon",
+          "emojiTooLongForRepoIcon": "This emoji can't be used as a repo icon.",
+          "currentEmojiSelection": "Current: {{value0}}",
+          "searchEmojiPlaceholder": "Search emoji"
         },
         "RepositoryPane": {
           "15a99d9b9f": "Relative paths resolve from this project root.",
@@ -8455,7 +8489,9 @@
               "d5c5b47bb9": "update",
               "fb854902d9": "connecting",
               "9a9f8d4910": "Connect Jira Cloud to browse, create, and link issues.",
-              "74f3063026": "{{value0}} site{{value1}} connected"
+              "74f3063026": "{{value0}} site{{value1}} connected",
+              "statusConnected": "Connected",
+              "statusNotConnected": "Not connected"
             }
           }
         },
@@ -9278,7 +9314,9 @@
                 "disconnect_all": "Disconnect",
                 "account_scope_prefix": "Account scope",
                 "2d60ec7921": "Connect a Jira Cloud site with an API token, or a self-hosted Jira with a personal access token or username and password. Credentials are sent to the selected remote runtime and stored there with runtime-supported encryption.",
-                "977e360b71": "Connect a Jira Cloud site with an API token, or a self-hosted Jira with a personal access token or username and password. Credentials are stored locally and encrypted when local runtime storage supports it."
+                "977e360b71": "Connect a Jira Cloud site with an API token, or a self-hosted Jira with a personal access token or username and password. Credentials are stored locally and encrypted when local runtime storage supports it.",
+                "statusConnected": "Connected",
+                "statusNotConnected": "Not connected"
               }
             }
           }
@@ -9319,7 +9357,13 @@
                   "63a7f47392": "ORCA_BITBUCKET_EMAIL",
                   "24ac1c69dc": "Bitbucket status is not available in this runtime yet.",
                   "a924e8dcd1": "Pull requests and build statuses via Bitbucket Cloud API tokens.",
-                  "0fa5629dad": "Pull requests and build statuses"
+                  "0fa5629dad": "Pull requests and build statuses",
+                  "statusConnected": "Connected",
+                  "statusUnavailable": "Unavailable",
+                  "statusNotConfigured": "Not configured",
+                  "statusAuthFailed": "Auth failed",
+                  "statusConfigured": "Configured",
+                  "statusOptionalSetup": "Optional setup"
                 }
               }
             }
@@ -9782,6 +9826,10 @@
           "serviceManagerHelp": "Update Orca through the service manager that starts this server.",
           "unpackedHelp": "Development builds must be updated from their source checkout.",
           "legacyHelp": "Update this server manually once to enable remote updates."
+        },
+        "BrowserLinkRoutingSetting": {
+          "description": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor. {{shortcut}} always uses your system browser.",
+          "descriptionBase": "Open http(s) links in Orca's built-in browser — from the terminal, markdown, and the editor."
         },
         "BrowserLinkRoutingModifierSetting": {
           "titleSystem": "Hold Shift to open in your web browser",
@@ -10779,7 +10827,6 @@
                 "a54ae21c6f": "Status:",
                 "e4e3af15ee": "View full details",
                 "b8c4e2a1f7": "View full logs",
-                "2524d1fb83": "Log tail available in full details.",
                 "a2fb3f4408": "Showing first 100 jobs",
                 "df137989b3": "Showing first 20 annotations",
                 "1f2b980522": "Loading check details…",
@@ -10831,7 +10878,8 @@
                 "5e6e5a13fa": "View",
                 "actionRequiredHint": "This check needs a manual action on GitHub (for example, approving the workflow run) before merging is unblocked.",
                 "b3195cba33": "Unmark author as bot",
-                "f588b46a6c": "Mark author as bot"
+                "f588b46a6c": "Mark author as bot",
+                "checkDetailsLoadFailed": "Failed to load check details."
               },
               "empty": {
                 "state": {
@@ -13452,7 +13500,8 @@
             "4a9568f773": "Back",
             "4f86e2a10b": "Skip tour",
             "d974f32a83": "Dismiss tour",
-            "ffa4412b66": "next"
+            "ffa4412b66": "next",
+            "complete": "Done"
           },
           "ContextualTourProgressDots": {
             "7734cb8ad3": "of",
@@ -13462,7 +13511,17 @@
             "tour": {
               "overlay": {
                 "measurement": {
-                  "38b3155418": "Next"
+                  "38b3155418": "Next",
+                  "automations": {
+                    "intro": {
+                      "title": "What is an automation?",
+                      "body": "Automations run agent work on a schedule. Add an automation by clicking this button."
+                    },
+                    "results": {
+                      "title": "Find the results",
+                      "body": "Runs show when automations ran, what happened, and where to inspect their output."
+                    }
+                  }
                 }
               }
             }
@@ -14534,6 +14593,11 @@
       },
       "webRuntimeSession": {
         "remoteHostDisconnected": "The workspace is not connected to a remote Orca host."
+      },
+      "gitlabJobTraceClient": {
+        "loadFailed": "Failed to load the GitLab job log.",
+        "emptyTrace": "No log is available for this GitLab job.",
+        "timedOut": "Timed out loading the GitLab job log."
       }
     }
   },
