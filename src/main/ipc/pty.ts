@@ -19,6 +19,7 @@ import type { GlobalSettings, TuiAgent } from '../../shared/types'
 import { toSshExecutionHostId } from '../../shared/execution-host'
 import { normalizeRuntimePathForComparison } from '../../shared/cross-platform-path'
 import { terminalOutputBacklogCapChars } from '../../shared/terminal-scrollback-policy'
+import { isDenseSgr } from '../../shared/terminal-sgr-density'
 import type {
   PtyDeliveryWriteOff,
   PtyRendererDeliveryHealthReply,
@@ -2402,11 +2403,15 @@ export function registerPtyHandlers(
   const PTY_RENDERER_INTERACTIVE_RESERVE_CHARS = 256 * 1024
   // Why: reserve a bounded lane so an active pane's keystroke redraw reaches the renderer ahead of hidden bulk output's ACKs.
   const PTY_RENDERER_ACTIVE_PTY_IN_FLIGHT_RESERVE_CHARS = 512 * 1024
-  // Why: echo/keystroke-sized chunks get their own tiny in-flight lane so a
-  // parse-starved flood (dense SGR) occupying the normal window can't park the
-  // keystroke echo behind it. xterm's FIFO still preserves byte order: the
-  // echo is written after already-delivered flood bytes and parses after them.
-  const PTY_INTERACTIVE_LANE_CHARS = 64 * 1024
+  // Why: echo/keystroke-sized chunks get their own lane so a parse-starved
+  // flood (dense SGR) occupying the normal window can't park the keystroke
+  // echo behind it. xterm's FIFO still preserves byte order: the echo is
+  // written after already-delivered flood bytes and parses after them.
+  // The lane's in-flight gate is canSendPtyDataToRenderer (same as the
+  // interactive batch path), NOT a tiny lane-only budget — per-send payloads
+  // are capped at INTERACTIVE_OUTPUT_MAX_CHARS, so the lane cannot outgrow the
+  // window, and a flood-saturated in-flight total is exactly when the echo
+  // needs the lane.
   let interactiveLaneSentChars = 0
   let interactiveLaneSentCount = 0
   // Why: request/response hygiene only (never mutates delivery state) — clears the outstanding-probe flag so a later arrival can re-probe, logs once per silent streak.
@@ -3604,12 +3609,15 @@ export function registerPtyHandlers(
     }
     // Why: inside the input window a parse-starved flood (dense SGR) parks the
     // keystroke echo behind the pending backlog in this FIFO. Drop flood-size
-    // chunks before they are appended; small chunks (echo, tiny redraws) always
-    // pass through. Projection-tracked SSH spans keep their accounting intact.
+    // dense-SGR chunks before they are appended; small chunks (echo, tiny
+    // redraws) and non-dense output (plain text, TUI repaints — both parse
+    // fast) always pass through, so typing never truncates ordinary output.
+    // Projection-tracked SSH spans keep their accounting intact.
     if (
-      projection?.desktopSpan !== true &&
+      !projection?.desktopSpan &&
       rawLength > PTY_INPUT_PROTECTION_DROP_MIN_CHARS &&
-      isInsidePtyInputProtectionWindow(payload.id)
+      isInsidePtyInputProtectionWindow(payload.id) &&
+      isDenseSgr(payload.data)
     ) {
       recordInputProtectionDrop(payload.id, rawLength)
       return
@@ -3632,23 +3640,24 @@ export function registerPtyHandlers(
     const pendingBefore = pendingData.get(payload.id)
     const combinedLength = (pendingBefore?.data.length ?? 0) + rawLength
     const isInteractiveOutput =
-      projection?.desktopSpan !== true &&
+      !projection?.desktopSpan &&
       shouldSendInteractiveOutputNow(payload.id, payload.data, performance.now())
     if (isInteractiveOutput && rendererPtyDispatcherReady) {
-      const interactiveAccounting = rendererDeliveryAccountingByPty.get(payload.id)
-      const laneInFlight = interactiveAccounting
-        ? interactiveAccounting.sentChars - interactiveAccounting.ackedChars
-        : 0
       // Why: judged by its own chunk (payload.data) so a keystroke echo is not
       // swallowed by a flood-sized pending tail; then sent merged WITH the
-      // pending tail so byte order is preserved. The dedicated lane bypasses
-      // the flood-saturated in-flight window. Oversized tails fall back to the
+      // pending tail so byte order is preserved. The lane reuses the
+      // interactive in-flight gate instead of a tiny lane-only budget: a
+      // flood-saturated window is exactly when the echo needs to bypass the
+      // normal path, and the per-send cap (INTERACTIVE_OUTPUT_MAX_CHARS) keeps
+      // the lane from outgrowing the window. Oversized tails fall back to the
       // normal pending path (the input-protection drop keeps those bounded).
       if (
-        laneInFlight < PTY_INTERACTIVE_LANE_CHARS &&
-        combinedLength <= INTERACTIVE_OUTPUT_MAX_CHARS
+        canSendPtyDataToRenderer(payload.id, { interactive: true }) &&
+        combinedLength <= INTERACTIVE_OUTPUT_MAX_CHARS &&
+        !pendingBefore?.droppedOutput
       ) {
         const combined = (pendingBefore?.data ?? '') + payload.data
+        const laneProjectionState = compactPendingProjectionState(pendingBefore ?? {}, projectionId)
         deletePendingPtyData(payload.id)
         clearFlushTimerIfIdle()
         sendPtyDataToRenderer(
@@ -3661,7 +3670,7 @@ export function registerPtyHandlers(
             combinedLength,
             payload.transformed === true
           ),
-          payload.projectionAdmissionIds
+          laneProjectionState.projectionAdmissionIds
         )
         interactiveLaneSentChars += combinedLength
         interactiveLaneSentCount += 1

@@ -6,7 +6,8 @@ import {
   type ForegroundTerminalOutputTarget
 } from './pane-terminal-foreground-render-settle'
 import { runGuardedWriteCompletionStep } from './xterm-write-callback-guard'
-import { isDenseSgr, normalizeSgrDensity } from './terminal-sgr-normalizer'
+import { isDenseSgr } from '../../../../shared/terminal-sgr-density'
+import { normalizeSgrDensity } from './terminal-sgr-normalizer'
 import { recordRendererCrashBreadcrumb } from '@/lib/crash-breadcrumb-recorder'
 import {
   discardInFlightTerminalOutputAckCredits,
@@ -115,11 +116,33 @@ const FOREGROUND_INPUT_PROTECTION_WINDOW_MS = 500
 const FOREGROUND_INPUT_SENSITIVE_BACKLOG_CHARS = 16 * 1024
 const lastUserInputAtByTerminal = new WeakMap<TerminalOutputTarget, number>()
 let lastAnyUserInputAt = Number.NEGATIVE_INFINITY
+// Why: a dense-SGR entry frozen by the input window has no drain re-arm when
+// the flood stops inside the window (no new enqueue, and drains only re-arm
+// while hasDrainableBacklog()); drain once the window expires so frozen
+// backlog always resumes instead of stranding until the next output chunk.
+const inputProtectionRecoveryTimers = new WeakMap<
+  TerminalOutputTarget,
+  ReturnType<typeof setTimeout>
+>()
 
 export function markTerminalUserInput(terminal: TerminalOutputTarget): void {
   const now = performance.now()
   lastUserInputAtByTerminal.set(terminal, now)
   lastAnyUserInputAt = now
+  const existing = inputProtectionRecoveryTimers.get(terminal)
+  if (existing) {
+    clearTimeout(existing)
+  }
+  inputProtectionRecoveryTimers.set(
+    terminal,
+    setTimeout(() => {
+      inputProtectionRecoveryTimers.delete(terminal)
+      scheduleDrain(0)
+      // Why +1ms: hasRecentTerminalInput uses `<= WINDOW`, so a timer at
+      // exactly WINDOW_MS still sees the window open and the entry stays
+      // frozen — the recovery drain must fire strictly after expiry.
+    }, FOREGROUND_INPUT_PROTECTION_WINDOW_MS + 1)
+  )
 }
 
 function hasRecentAnyInput(): boolean {

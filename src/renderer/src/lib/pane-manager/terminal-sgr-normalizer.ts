@@ -147,34 +147,6 @@ function isSgrReset(params: string): boolean {
   return params === '' || params === '0'
 }
 
-/** Cheap density probe: does this chunk carry enough SGR styling to matter? */
-export function isDenseSgr(data: string): boolean {
-  let sgrCount = 0
-  let charCount = 0
-  let index = 0
-  const length = data.length
-  while (index < length) {
-    if (data.charCodeAt(index) === 0x1b && data[index + 1] === '[') {
-      let cursor = index + 2
-      while (cursor < length && !(data[cursor] >= '@' && data[cursor] <= '~')) {
-        cursor += 1
-      }
-      if (cursor < length && data[cursor] === 'm') {
-        sgrCount += 1
-      }
-      index = cursor < length ? cursor + 1 : length
-    } else {
-      charCount += 1
-      index += 1
-    }
-  }
-  // Character-level highlighting emits ~1 SGR per character; the parse-starved
-  // threshold is one SGR per ~2 characters. Non-SGR CSI (cursor moves, DEC
-  // modes) does not count. Token/word-level styling (~1 per 10+ chars) parses
-  // fine and must NOT trip the input-protection freeze.
-  return charCount > 0 && sgrCount * 2 >= charCount
-}
-
 export function normalizeSgrDensity(data: string): string {
   if (!data.includes(ESC)) {
     return data
