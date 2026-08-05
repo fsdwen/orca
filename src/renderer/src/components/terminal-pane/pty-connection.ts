@@ -267,6 +267,7 @@ import {
   openCommandCodeDoneSettle,
   setCommandCodeDoneSettleExecutor
 } from './command-code-done-settle'
+import { canCommandCodeOutputOwnPane } from './command-code-output-ownership'
 import { isTerminalTabParked } from './terminal-parked-watcher-registry'
 import {
   getExecutionHostIdForWorktree,
@@ -2818,7 +2819,21 @@ export function connectPanePty(
       .setAgentStatus(cacheKey, statusPayload, terminalTitle, undefined, routing)
   }
 
+  const canApplyCommandCodeOutputStatus = (): boolean => {
+    const state = useAppStore.getState()
+    const foreground = state.paneForegroundAgentByPaneKey[cacheKey]
+    return canCommandCodeOutputOwnPane({
+      foregroundAgent: foreground?.agent,
+      shellForeground: foreground?.shellForeground,
+      paneOwnerAgent: getAuthoritativePaneAgent(),
+      retainedPaneOwnerAgent: state.retainedAgentsByPaneKey[cacheKey]?.agentType
+    })
+  }
+
   const seedCommandCodeOutputWorkingStatus = (prompt: string): void => {
+    if (!canApplyCommandCodeOutputStatus()) {
+      return
+    }
     clearCommandCodeOutputDoneTimer()
     const routing = resolveCurrentAgentStatusRouting()
     if (!routing) {
@@ -2885,6 +2900,9 @@ export function connectPanePty(
   )
   const clearCommandCodeOutputDoneTimer = (): void => cancelCommandCodeDoneSettle(cacheKey)
   const scheduleCommandCodeOutputDoneStatus = (prompt: string): void => {
+    if (!canApplyCommandCodeOutputStatus()) {
+      return
+    }
     const normalizedPrompt = prompt.trim()
     if (!normalizedPrompt) {
       cancelCommandCodeDoneSettle(cacheKey)
@@ -8246,7 +8264,7 @@ export function connectPanePty(
             const alreadyConnected =
               useAppStore.getState().sshConnectionStates.get(connectionId)?.status === 'connected'
             if (!alreadyConnected) {
-              // Wait for the user-driven connect (SshDisconnectedDialog → passphrase → ssh.connect) to complete.
+              // Wait for the user-driven connect (sidebar card control or terminal reconnect overlay → passphrase → ssh.connect) to complete.
               // Why: resolve on terminal-failure statuses too ('auth-failed'/'error'/'reconnection-failed') so it can't hang forever if the user cancels or the connect fails.
               const outcome = await new Promise<UserInitiatedSshConnectOutcome>((resolve) => {
                 // Why: 'disconnected' counts as terminal only after a non-disconnected status was seen (a real connect attempt that returned to 'disconnected').
