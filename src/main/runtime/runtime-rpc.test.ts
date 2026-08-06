@@ -4051,6 +4051,32 @@ describe('OrcaRuntimeRpcServer', () => {
         }
       ])
 
+      // Pins the opt-out half of the compat contract: the request above omits
+      // the flag and still gets layouts; only an explicit `false` drops them.
+      const optedOutResponse = await sendRequest(metadata!.transports[0]!.endpoint, {
+        id: 'req_list_layout_opt_out',
+        authToken: metadata!.authToken,
+        method: 'terminal.list',
+        params: { worktree: `id:${worktreeId}`, includeVisualLayouts: false }
+      })
+      const optedOut = optedOutResponse.result as {
+        visualLayouts?: unknown[]
+        terminals: unknown[]
+      }
+      expect(optedOutResponse).toMatchObject({ id: 'req_list_layout_opt_out', ok: true })
+      expect(optedOut.visualLayouts).toBeUndefined()
+      expect(optedOut.terminals).toHaveLength(result.terminals.length)
+
+      const explicitIncludeResponse = await sendRequest(metadata!.transports[0]!.endpoint, {
+        id: 'req_list_layout_opt_in',
+        authToken: metadata!.authToken,
+        method: 'terminal.list',
+        params: { worktree: `id:${worktreeId}`, includeVisualLayouts: true }
+      })
+      expect(
+        (explicitIncludeResponse.result as { visualLayouts?: unknown[] }).visualLayouts
+      ).toHaveLength(1)
+
       const resolvePaneResponse = await sendRequest(metadata!.transports[0]!.endpoint, {
         id: 'req_resolve_pane',
         authToken: metadata!.authToken,
