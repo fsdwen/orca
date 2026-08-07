@@ -1,18 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as FsPromises from 'node:fs/promises'
+import type * as GitRepo from '../git/repo'
 import type { Repo } from '../../shared/types'
 
 // Why: the watch must stay one stat per folder project per tick — counting the real
 // calls is what keeps a directory-listing fan-out from creeping back in.
-const { statCalls, readdirSpy } = vi.hoisted(() => ({
+const { statCalls, readdirSpy, gitProbes } = vi.hoisted(() => ({
   statCalls: [] as string[],
-  readdirSpy: vi.fn()
+  readdirSpy: vi.fn(),
+  // Why: the rejected-marker cache exists to stop git respawning every tick; counting the
+  // real probes is the only way that guarantee stays true.
+  gitProbes: [] as string[]
 }))
+
+vi.mock('../git/repo', async (importOriginal) => {
+  const actual = await importOriginal<typeof GitRepo>()
+  return {
+    ...actual,
+    isGitRepo: (path: string) => {
+      gitProbes.push(path)
+      return actual.isGitRepo(path)
+    }
+  }
+})
 
 vi.mock('node:fs/promises', async (importOriginal) => {
   const actual = await importOriginal<typeof FsPromises>()
@@ -112,20 +127,23 @@ function gitInit(repoPath: string): void {
 }
 
 describe('folder repo git upgrade watch', () => {
-  // Why: `realpathSync` because macOS TMPDIR lives under a symlink; the symlinked form
-  // is used deliberately by the mismatch test below.
+  // Why: `realpathSync` because macOS TMPDIR is itself a symlink; `symlinkedRoot` is an
+  // explicit link so the spelling-mismatch test runs the same way on Linux and Windows CI.
   let root: string
   let symlinkedRoot: string
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    symlinkedRoot = await mkdtemp(join(tmpdir(), 'folder-repo-upgrade-'))
-    root = realpathSync(symlinkedRoot)
+    root = realpathSync(await mkdtemp(join(tmpdir(), 'folder-repo-upgrade-')))
+    symlinkedRoot = `${root}-link`
+    await symlink(root, symlinkedRoot, 'dir')
     statCalls.length = 0
+    gitProbes.length = 0
   })
 
   afterEach(async () => {
     stopFolderRepoGitUpgradeWatch()
+    await rm(symlinkedRoot, { force: true })
     await rm(root, { recursive: true, force: true })
   })
 
@@ -175,6 +193,99 @@ describe('folder repo git upgrade watch', () => {
     await tick()
 
     expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
+  })
+
+  it('refuses a folder that is inside another repo rather than its own root', async () => {
+    // Why: git accepts any path inside a work tree, so a stray marker in a subdirectory
+    // would otherwise flip a project whose path is not a repository root.
+    const outer = join(root, 'outer')
+    await mkdir(outer)
+    gitInit(outer)
+    const inner = join(outer, 'sub')
+    await mkdir(join(inner, '.git'), { recursive: true })
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: inner })])
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+
+    expect(store.updateRepo).not.toHaveBeenCalled()
+  })
+
+  it('probes git once for a marker it rejects instead of every tick', async () => {
+    const repoPath = join(root, 'stray-marker')
+    await mkdir(repoPath)
+    await writeFile(join(repoPath, '.git'), 'not a gitdir pointer\n')
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(6)
+
+    // The marker is still stat'd every tick; git is not re-run for it.
+    expect(statCalls.length).toBeGreaterThan(2)
+    expect(gitProbes).toHaveLength(1)
+  })
+
+  it('re-probes once the rejected marker itself changes', async () => {
+    const repoPath = join(root, 'late-init')
+    await mkdir(repoPath)
+    await writeFile(join(repoPath, '.git'), 'not a gitdir pointer\n')
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+    expect(store.updateRepo).not.toHaveBeenCalled()
+
+    await rm(join(repoPath, '.git'), { force: true })
+    gitInit(repoPath)
+    await tick(2)
+
+    expect(store.updateRepo).toHaveBeenCalledWith(
+      'folder-repo',
+      expect.objectContaining({ kind: 'git' })
+    )
+  })
+
+  it('stops probing while the window is destroyed and resumes on re-attach', async () => {
+    const repoPath = join(root, 'my-project')
+    await mkdir(repoPath)
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
+    const window = makeWindow()
+
+    startFolderRepoGitUpgradeWatch(store as never, window as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: POLL_MS
+    })
+    await tick()
+
+    window.destroyed = true
+    gitInit(repoPath)
+    statCalls.length = 0
+    await tick(3)
+    expect(store.updateRepo).not.toHaveBeenCalled()
+    expect(statCalls).toHaveLength(0)
+
+    // A re-attached window replaces the destroyed one on the running watch.
+    const nextWindow = makeWindow()
+    startFolderRepoGitUpgradeWatch(store as never, nextWindow as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: POLL_MS
+    })
+    await tick(2)
+
+    expect(store.updateRepo).toHaveBeenCalledWith(
+      'folder-repo',
+      expect.objectContaining({ kind: 'git' })
+    )
+    expect(notifyReposChanged).toHaveBeenCalledWith(nextWindow)
   })
 
   it('ignores a .git entry git itself does not accept as a repository', async () => {
@@ -251,13 +362,24 @@ describe('folder repo git upgrade watch', () => {
   })
 
   it('backs off to the idle interval and stats nothing when no folder project exists', async () => {
+    let listCalls = 0
     const store = makeStore([makeRepo({ id: 'git-repo', path: join(root, 'g'), kind: 'git' })])
+    const repos = store.getRepos()
+    store.getRepos = () => {
+      listCalls++
+      return repos
+    }
+
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
-    await tick(3)
+    await tick(5)
 
+    // Why: at the fast interval this window would tick ~6 times; on the idle interval it
+    // ticks once. Anything above 2 means the backoff was skipped.
+    expect(listCalls).toBeGreaterThanOrEqual(1)
+    expect(listCalls).toBeLessThanOrEqual(2)
     expect(store.getRepo).not.toHaveBeenCalled()
     expect(statCalls).toHaveLength(0)
   })
@@ -350,10 +472,14 @@ describe('folder repo git upgrade watch', () => {
     statCalls.length = 0
     await tick(4)
 
-    // Why: assert the shape, not the tick count — wall-clock slack decides 3-vs-5 ticks,
-    // but a per-tick multiplication or a directory-listing fan-out still fails hard.
-    expect(statCalls.length).toBeGreaterThanOrEqual(paths.length * 2)
-    expect(statCalls.length % paths.length).toBe(0)
+    // Why: assert the shape, not the tick count — wall-clock slack decides how many ticks
+    // land, but every project must be stat'd the same number of times (a per-tick
+    // multiplication breaks that) and a directory listing must never appear.
+    const perPath = paths.map(
+      (repoPath) => statCalls.filter((call) => call === join(repoPath, '.git')).length
+    )
+    expect(Math.min(...perPath)).toBeGreaterThanOrEqual(2)
+    expect(Math.max(...perPath) - Math.min(...perPath)).toBeLessThanOrEqual(1)
     expect(new Set(statCalls)).toEqual(new Set(paths.map((repoPath) => join(repoPath, '.git'))))
     expect(readdirSpy).not.toHaveBeenCalled()
   })

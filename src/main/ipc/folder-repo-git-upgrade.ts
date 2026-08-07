@@ -1,4 +1,5 @@
 import { stat } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { Repo } from '../../shared/types'
@@ -39,6 +40,11 @@ type UpgradeWatch = {
 
 let activeWatch: UpgradeWatch | null = null
 
+// Why: git's verdict on a marker only changes when the marker does, and probing costs two
+// synchronous git spawns. Without this a `.git` git keeps rejecting — a stray file, an
+// interrupted init, a subdirectory of another repo — would respawn git every tick forever.
+const rejectedMarkers = new Map<string, string>()
+
 // Why: `git init` on an SSH host or behind a WSL UNC root is not observable with a
 // local stat, and those roots are exactly the ones the base watcher already refuses
 // to poll natively. Desktop-local folder projects are the reported case (#11477).
@@ -51,66 +57,103 @@ function isUpgradeCandidate(repo: Repo): boolean {
   )
 }
 
-async function hasGitMarker(repoPath: string): Promise<boolean> {
+/** Identity of the `.git` entry, or null when there is none. */
+async function readGitMarkerSignature(repoPath: string): Promise<string | null> {
   try {
-    await stat(join(repoPath, '.git'))
-    return true
+    const marker = await stat(join(repoPath, '.git'))
+    return `${marker.mtimeMs}:${marker.ctimeMs}:${marker.ino}`
   } catch {
-    return false
+    return null
   }
 }
 
-// Why: Add Project stores a git root exactly as `rev-parse --show-toplevel` reports it,
-// while a folder project keeps the raw path the user picked. When a symlinked parent
-// makes the two disagree, git's own root reads as an *external* worktree — so hiding
-// external worktrees here would hide the project's only workspace. Keep the pre-rollout
-// default in that case; the workspace stays visible, just badged external.
-function getUpgradeUpdates(repoPath: string): { externalWorktreeVisibility?: 'hide' } {
-  const gitRoot = normalizeRuntimePathForComparison(getGitRepoRoot(repoPath))
-  return gitRoot === normalizeRuntimePathForComparison(repoPath)
+function resolveRealPath(pathValue: string): string {
+  try {
+    return realpathSync(pathValue)
+  } catch {
+    return pathValue
+  }
+}
+
+/**
+ * Git's verdict on the folder, or null when it must stay a folder project.
+ *
+ * Two comparisons, deliberately at different strictness:
+ * - Refuse unless the folder *is* the work-tree root. `.git` existing proves nothing —
+ *   git accepts any path inside a work tree, so a stray marker in a subdirectory of
+ *   another repo would otherwise flip a project whose path is not a repo root.
+ * - Only hide external worktrees when the stored spelling also matches. Add Project
+ *   stores the root as `rev-parse --show-toplevel` spells it while a folder project keeps
+ *   the path the user picked; when a symlinked parent makes those differ, the root reads
+ *   as an *external* worktree, and hiding those would hide the project's only workspace.
+ */
+function resolveUpgrade(repoPath: string): { externalWorktreeVisibility?: 'hide' } | null {
+  if (!isGitRepo(repoPath)) {
+    return null
+  }
+  const gitRoot = getGitRepoRoot(repoPath)
+  if (resolveRealPath(gitRoot) !== resolveRealPath(repoPath)) {
+    return null
+  }
+  return normalizeRuntimePathForComparison(gitRoot) === normalizeRuntimePathForComparison(repoPath)
     ? { externalWorktreeVisibility: 'hide' }
     : {}
 }
 
-async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<void> {
+/** True when the marker was accepted and the repo upgraded. */
+async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<boolean> {
   // Re-read after the marker stat: the repo can be removed or already upgraded mid-tick.
   const current = watch.store.getRepo(repoId)
   if (!current || !isUpgradeCandidate(current)) {
-    return
+    return false
   }
-  // Why: a `.git` entry is not proof of a repo — ask git, the same authority Add Project
-  // uses, so a stray marker or a half-written init cannot flip the project.
-  if (!isGitRepo(current.path)) {
-    return
+  const updates = resolveUpgrade(current.path)
+  if (!updates) {
+    return false
   }
-  const upgraded = watch.store.updateRepo(repoId, {
-    kind: 'git',
-    ...getUpgradeUpdates(current.path)
-  })
+  const upgraded = watch.store.updateRepo(repoId, { kind: 'git', ...updates })
   if (!upgraded) {
-    return
+    return true
   }
   // Adding a git project prepares its worktree root; an upgrade has to do the same.
   await prepareLocalWorktreeRootForRepo(watch.store, upgraded)
   invalidateAuthorizedRootsCache()
   if (watch.disposed) {
-    return
+    return true
   }
   // Why: reuse the repo-mutation notifier so paired clients refetch too (#11994) and
   // the repo picks up the base/common-dir watchers it was skipped for as a folder.
   notifyReposChanged(watch.mainWindow)
   notifyWorktreesChanged(watch.mainWindow, repoId)
+  return true
 }
 
 async function pollOnce(watch: UpgradeWatch): Promise<void> {
-  const candidates = watch.store.getRepos().filter(isUpgradeCandidate)
+  // Why: a closed window on macOS leaves the app running with nothing to notify, and the
+  // poller's visibility helper reports a destroyed window as visible on purpose so a
+  // window-recreation gap cannot park it forever. Idle out instead of probing git.
+  const candidates = watch.mainWindow.isDestroyed()
+    ? []
+    : watch.store.getRepos().filter(isUpgradeCandidate)
   watch.hasCandidates = candidates.length > 0
+  const liveKeys = new Set<string>()
   for (const repo of candidates) {
     if (watch.disposed) {
       return
     }
-    if (await hasGitMarker(repo.path)) {
-      await upgradeFolderRepo(watch, repo.id)
+    const key = normalizeRuntimePathForComparison(repo.path)
+    liveKeys.add(key)
+    const signature = await readGitMarkerSignature(repo.path)
+    if (signature === null || rejectedMarkers.get(key) === signature) {
+      continue
+    }
+    if (!(await upgradeFolderRepo(watch, repo.id))) {
+      rejectedMarkers.set(key, signature)
+    }
+  }
+  for (const key of rejectedMarkers.keys()) {
+    if (!liveKeys.has(key)) {
+      rejectedMarkers.delete(key)
     }
   }
 }
@@ -193,6 +236,7 @@ export function stopFolderRepoGitUpgradeWatch(): void {
   }
   activeWatch = null
   watch.disposed = true
+  rejectedMarkers.clear()
   if (watch.timer) {
     clearTimeout(watch.timer)
     watch.timer = null
