@@ -98,13 +98,18 @@ function makeRepo(overrides: Partial<Repo> & Pick<Repo, 'id' | 'path'>): Repo {
   } as Repo
 }
 
-function makeStore(repos: Repo[]): {
+function makeStore(
+  repos: Repo[],
+  worktreeMeta: Record<string, unknown> = {}
+): {
   getRepos: () => Repo[]
   getRepo: ReturnType<typeof vi.fn>
   updateRepo: ReturnType<typeof vi.fn>
+  getAllWorktreeMeta: () => Record<string, unknown>
   getSettings: () => Record<string, never>
 } {
   return {
+    getAllWorktreeMeta: () => worktreeMeta,
     getRepos: () => repos,
     getRepo: vi.fn((id: string) => repos.find((repo) => repo.id === id)),
     updateRepo: vi.fn((id: string, updates: Partial<Repo>) => {
@@ -193,6 +198,48 @@ describe('folder repo git upgrade watch', () => {
     await tick()
 
     expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
+  })
+
+  it('refuses a project that has folder workspaces the git listing would drop', async () => {
+    // Why: the git listing branch prunes every lineage id under the repo that `git worktree
+    // list` does not report, which is all of them — the workspaces would be destroyed.
+    const repoPath = join(root, 'notebook')
+    await mkdir(repoPath)
+    gitInit(repoPath)
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })], {
+      [`folder-repo::${repoPath}`]: { displayName: 'notebook' },
+      [`folder-repo::${repoPath}::workspace:11111111-1111-1111-1111-111111111111`]: {
+        displayName: 'draft'
+      }
+    })
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+
+    expect(store.updateRepo).not.toHaveBeenCalled()
+  })
+
+  it('still upgrades a project that only has its root workspace', async () => {
+    const repoPath = join(root, 'solo')
+    await mkdir(repoPath)
+    gitInit(repoPath)
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })], {
+      [`folder-repo::${repoPath}`]: { displayName: 'solo' }
+    })
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+
+    expect(store.updateRepo).toHaveBeenCalledWith(
+      'folder-repo',
+      expect.objectContaining({ kind: 'git' })
+    )
   })
 
   it('refuses a folder that is inside another repo rather than its own root', async () => {

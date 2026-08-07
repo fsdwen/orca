@@ -6,6 +6,7 @@ import type { Repo } from '../../shared/types'
 import type { Store } from '../persistence'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import { isFolderRepo } from '../../shared/repo-kind'
+import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR } from '../../shared/worktree-id'
 import { normalizeRuntimePathForComparison } from '../../shared/cross-platform-path'
 import { isWslUncPath } from '../../shared/wsl-paths'
 import { getGitRepoRoot, isGitRepo } from '../git/repo'
@@ -57,6 +58,20 @@ function isUpgradeCandidate(repo: Repo): boolean {
   )
 }
 
+/**
+ * A folder project's extra workspaces are `worktreeMeta` rows keyed
+ * `repoId::path::workspace:<uuid>`, and only the folder branch of the worktree listing
+ * knows those keys exist. Flipping `kind` moves the repo onto the git branch, which lists
+ * `git worktree list` (one path) and prunes every lineage id under the repo that is not in
+ * it — so those workspaces vanish from the sidebar and their lineage is deleted. Migrating
+ * them belongs to the listing code that owns both shapes, not to this watch, so refuse the
+ * upgrade instead of destroying them. Such a project keeps working exactly as it does today.
+ */
+function hasExtraFolderWorkspaces(store: Store, repo: Repo): boolean {
+  const prefix = `${repo.id}::${repo.path}${FOLDER_WORKSPACE_INSTANCE_SEPARATOR}`
+  return Object.keys(store.getAllWorktreeMeta()).some((key) => key.startsWith(prefix))
+}
+
 /** Identity of the `.git` entry, or null when there is none. */
 async function readGitMarkerSignature(repoPath: string): Promise<string | null> {
   try {
@@ -105,6 +120,9 @@ async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<b
   // Re-read after the marker stat: the repo can be removed or already upgraded mid-tick.
   const current = watch.store.getRepo(repoId)
   if (!current || !isUpgradeCandidate(current)) {
+    return false
+  }
+  if (hasExtraFolderWorkspaces(watch.store, current)) {
     return false
   }
   const updates = resolveUpgrade(current.path)
