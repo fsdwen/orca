@@ -5,7 +5,9 @@ import type { Repo } from '../../shared/types'
 import type { Store } from '../persistence'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import { isFolderRepo } from '../../shared/repo-kind'
+import { normalizeRuntimePathForComparison } from '../../shared/cross-platform-path'
 import { isWslUncPath } from '../../shared/wsl-paths'
+import { getGitRepoRoot, isGitRepo } from '../git/repo'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
 import { invalidateAuthorizedRootsCache } from './filesystem-auth'
 import { notifyReposChanged } from './repos'
@@ -58,17 +60,32 @@ async function hasGitMarker(repoPath: string): Promise<boolean> {
   }
 }
 
+// Why: Add Project stores a git root exactly as `rev-parse --show-toplevel` reports it,
+// while a folder project keeps the raw path the user picked. When a symlinked parent
+// makes the two disagree, git's own root reads as an *external* worktree — so hiding
+// external worktrees here would hide the project's only workspace. Keep the pre-rollout
+// default in that case; the workspace stays visible, just badged external.
+function getUpgradeUpdates(repoPath: string): { externalWorktreeVisibility?: 'hide' } {
+  const gitRoot = normalizeRuntimePathForComparison(getGitRepoRoot(repoPath))
+  return gitRoot === normalizeRuntimePathForComparison(repoPath)
+    ? { externalWorktreeVisibility: 'hide' }
+    : {}
+}
+
 async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<void> {
   // Re-read after the marker stat: the repo can be removed or already upgraded mid-tick.
   const current = watch.store.getRepo(repoId)
   if (!current || !isUpgradeCandidate(current)) {
     return
   }
+  // Why: a `.git` entry is not proof of a repo — ask git, the same authority Add Project
+  // uses, so a stray marker or a half-written init cannot flip the project.
+  if (!isGitRepo(current.path)) {
+    return
+  }
   const upgraded = watch.store.updateRepo(repoId, {
     kind: 'git',
-    // Why: without an explicit value the upgraded repo reads as pre-rollout and would
-    // show every external worktree, unlike a project added as git in the first place.
-    externalWorktreeVisibility: 'hide'
+    ...getUpgradeUpdates(current.path)
   })
   if (!upgraded) {
     return

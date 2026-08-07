@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mkdir, mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { execFileSync } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as FsPromises from 'node:fs/promises'
@@ -105,12 +107,20 @@ function makeStore(repos: Repo[]): {
 const POLL_MS = 25
 const IDLE_POLL_MS = 250
 
+function gitInit(repoPath: string): void {
+  execFileSync('git', ['init', '-q', '-b', 'main'], { cwd: repoPath, stdio: 'ignore' })
+}
+
 describe('folder repo git upgrade watch', () => {
+  // Why: `realpathSync` because macOS TMPDIR lives under a symlink; the symlinked form
+  // is used deliberately by the mismatch test below.
   let root: string
+  let symlinkedRoot: string
 
   beforeEach(async () => {
     vi.clearAllMocks()
-    root = await mkdtemp(join(tmpdir(), 'folder-repo-upgrade-'))
+    symlinkedRoot = await mkdtemp(join(tmpdir(), 'folder-repo-upgrade-'))
+    root = realpathSync(symlinkedRoot)
     statCalls.length = 0
   })
 
@@ -136,7 +146,7 @@ describe('folder repo git upgrade watch', () => {
     await tick()
     expect(store.updateRepo).not.toHaveBeenCalled()
 
-    await mkdir(join(repoPath, '.git'))
+    gitInit(repoPath)
     await tick()
 
     expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', {
@@ -148,6 +158,38 @@ describe('folder repo git upgrade watch', () => {
     // Why: the shared notifier is what also reaches paired clients (#11994).
     expect(notifyReposChanged).toHaveBeenCalledWith(window)
     expect(notifyWorktreesChanged).toHaveBeenCalledWith(window, 'folder-repo')
+  })
+
+  it("keeps external worktrees visible when the stored path is not git's own root", async () => {
+    // Why: a symlinked parent makes git report a different toplevel; hiding external
+    // worktrees there would hide the project's only workspace (found in Electron QA).
+    const repoPath = join(symlinkedRoot, 'symlinked-project')
+    await mkdir(repoPath)
+    gitInit(repoPath)
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick()
+
+    expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
+  })
+
+  it('ignores a .git entry git itself does not accept as a repository', async () => {
+    const repoPath = join(root, 'stray-marker')
+    await mkdir(repoPath)
+    await writeFile(join(repoPath, '.git'), 'not a gitdir pointer\n')
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+
+    expect(store.updateRepo).not.toHaveBeenCalled()
   })
 
   it('upgrades only the folder repo that gained a .git marker', async () => {
@@ -164,7 +206,7 @@ describe('folder repo git upgrade watch', () => {
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
-    await mkdir(join(pathA, '.git'))
+    gitInit(pathA)
     await tick()
 
     expect(store.updateRepo).toHaveBeenCalledTimes(1)
@@ -176,7 +218,8 @@ describe('folder repo git upgrade watch', () => {
 
   it('never upgrades again once the repo is already git', async () => {
     const repoPath = join(root, 'my-project')
-    await mkdir(join(repoPath, '.git'), { recursive: true })
+    await mkdir(repoPath)
+    gitInit(repoPath)
     const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
@@ -190,7 +233,8 @@ describe('folder repo git upgrade watch', () => {
 
   it('skips remote and WSL folder repos a local stat cannot answer for', async () => {
     const sshPath = join(root, 'ssh-project')
-    await mkdir(join(sshPath, '.git'), { recursive: true })
+    await mkdir(sshPath)
+    gitInit(sshPath)
     const store = makeStore([
       makeRepo({ id: 'ssh-repo', path: sshPath, connectionId: 'conn-1' }),
       makeRepo({ id: 'wsl-repo', path: '\\\\wsl$\\Ubuntu\\home\\user\\project' }),
@@ -227,7 +271,8 @@ describe('folder repo git upgrade watch', () => {
       idlePollIntervalMs: POLL_MS
     })
     const repoPath = join(root, 'late-project')
-    await mkdir(join(repoPath, '.git'), { recursive: true })
+    await mkdir(repoPath)
+    gitInit(repoPath)
     repos.push(makeRepo({ id: 'late-repo', path: repoPath }))
     await tick(2)
 
@@ -250,7 +295,7 @@ describe('folder repo git upgrade watch', () => {
     await tick()
 
     window.visible = false
-    await mkdir(join(repoPath, '.git'))
+    gitInit(repoPath)
     statCalls.length = 0
     await tick(3)
     expect(store.updateRepo).not.toHaveBeenCalled()
@@ -270,7 +315,8 @@ describe('folder repo git upgrade watch', () => {
 
   it('does not notify when the repo disappears between the marker check and the update', async () => {
     const repoPath = join(root, 'my-project')
-    await mkdir(join(repoPath, '.git'), { recursive: true })
+    await mkdir(repoPath)
+    gitInit(repoPath)
     const repos = [makeRepo({ id: 'folder-repo', path: repoPath })]
     const store = makeStore(repos)
     store.updateRepo.mockReturnValue(null)
@@ -324,7 +370,7 @@ describe('folder repo git upgrade watch', () => {
     await tick()
     stopFolderRepoGitUpgradeWatch()
 
-    await mkdir(join(repoPath, '.git'))
+    gitInit(repoPath)
     statCalls.length = 0
     await tick(3)
 
