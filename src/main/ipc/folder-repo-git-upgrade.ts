@@ -7,6 +7,8 @@ import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../shared/ex
 import { isFolderRepo } from '../../shared/repo-kind'
 import { isWslUncPath } from '../../shared/wsl-paths'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
+import { invalidateAuthorizedRootsCache } from './filesystem-auth'
+import { notifyReposChanged } from './repos'
 import { notifyWorktreesChanged } from './worktree-remote'
 import {
   createWorktreePollerWindowVisibility,
@@ -14,7 +16,6 @@ import {
   WORKTREE_BASE_POLL_INTERVAL_MS,
   type WorktreePollerWindowVisibility
 } from './worktree-base-directory-poller'
-import { scheduleCurrentWorktreeBaseDirectoryWatcherSync } from './worktree-base-directory-watcher'
 
 // Why: with no folder project registered there is nothing to stat, so back the loop
 // off instead of waking every 2s. Adding the first folder project is the only case
@@ -24,7 +25,6 @@ const IDLE_POLL_INTERVAL_MS = WORKTREE_BASE_POLL_INTERVAL_MS * WORKTREE_BASE_BAC
 type UpgradeWatch = {
   store: Store
   mainWindow: BrowserWindow
-  onRepoUpgraded: () => void
   hasCandidates: boolean
   visibility: WorktreePollerWindowVisibility
   unsubscribeVisibility: () => void
@@ -75,12 +75,13 @@ async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<v
   }
   // Adding a git project prepares its worktree root; an upgrade has to do the same.
   await prepareLocalWorktreeRootForRepo(watch.store, upgraded)
-  // The repo now needs the base/common-dir watchers it was skipped for as a folder.
-  watch.onRepoUpgraded()
-  if (watch.disposed || watch.mainWindow.isDestroyed()) {
+  invalidateAuthorizedRootsCache()
+  if (watch.disposed) {
     return
   }
-  watch.mainWindow.webContents.send('repos:changed')
+  // Why: reuse the repo-mutation notifier so paired clients refetch too (#11994) and
+  // the repo picks up the base/common-dir watchers it was skipped for as a folder.
+  notifyReposChanged(watch.mainWindow)
   notifyWorktreesChanged(watch.mainWindow, repoId)
 }
 
@@ -133,29 +134,23 @@ async function runTick(watch: UpgradeWatch): Promise<void> {
 export function startFolderRepoGitUpgradeWatch(
   store: Store,
   mainWindow: BrowserWindow,
-  options: {
-    onRepoUpgraded?: () => void
-    pollIntervalMs?: number
-    idlePollIntervalMs?: number
-  } = {}
+  options: { pollIntervalMs?: number; idlePollIntervalMs?: number } = {}
 ): void {
-  const onRepoUpgraded = options.onRepoUpgraded ?? scheduleCurrentWorktreeBaseDirectoryWatcherSync
   if (mainWindow.isDestroyed()) {
-    stopFolderRepoGitUpgradeWatch()
     return
   }
   if (activeWatch) {
     activeWatch.store = store
     activeWatch.mainWindow = mainWindow
-    activeWatch.onRepoUpgraded = onRepoUpgraded
     return
   }
   const watch: UpgradeWatch = {
     store,
     mainWindow,
-    onRepoUpgraded,
-    hasCandidates: store.getRepos().some(isUpgradeCandidate),
-    visibility: createWorktreePollerWindowVisibility(() => activeWatch?.mainWindow ?? null),
+    // Why: assume work on the first tick rather than reading the store on the attach
+    // path; the tick itself settles the cadence once it has seen the repo list.
+    hasCandidates: true,
+    visibility: createWorktreePollerWindowVisibility(() => watch.mainWindow),
     unsubscribeVisibility: () => {},
     pollIntervalMs: options.pollIntervalMs ?? WORKTREE_BASE_POLL_INTERVAL_MS,
     idlePollIntervalMs: options.idlePollIntervalMs ?? IDLE_POLL_INTERVAL_MS,

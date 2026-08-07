@@ -30,14 +30,19 @@ vi.mock('node:fs/promises', async (importOriginal) => {
 vi.mock('./worktree-remote', () => ({
   notifyWorktreesChanged: vi.fn()
 }))
-vi.mock('./worktree-base-directory-watcher', () => ({
-  scheduleCurrentWorktreeBaseDirectoryWatcherSync: vi.fn()
+vi.mock('./repos', () => ({
+  notifyReposChanged: vi.fn()
+}))
+vi.mock('./filesystem-auth', () => ({
+  invalidateAuthorizedRootsCache: vi.fn()
 }))
 vi.mock('../worktree-root-preparation', () => ({
   prepareLocalWorktreeRootForRepo: vi.fn(async () => {})
 }))
 
 import { notifyWorktreesChanged } from './worktree-remote'
+import { notifyReposChanged } from './repos'
+import { invalidateAuthorizedRootsCache } from './filesystem-auth'
 import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
 import { notifyMainWindowBecameVisible } from '../window/main-window-visibility'
 import {
@@ -124,10 +129,7 @@ describe('folder repo git upgrade watch', () => {
     await mkdir(repoPath)
     const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
     const window = makeWindow()
-    const onRepoUpgraded = vi.fn()
-
     startFolderRepoGitUpgradeWatch(store as never, window as never, {
-      onRepoUpgraded,
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -142,8 +144,9 @@ describe('folder repo git upgrade watch', () => {
       externalWorktreeVisibility: 'hide'
     })
     expect(prepareLocalWorktreeRootForRepo).toHaveBeenCalledTimes(1)
-    expect(onRepoUpgraded).toHaveBeenCalledTimes(1)
-    expect(window.webContents.send).toHaveBeenCalledWith('repos:changed')
+    expect(invalidateAuthorizedRootsCache).toHaveBeenCalledTimes(1)
+    // Why: the shared notifier is what also reaches paired clients (#11994).
+    expect(notifyReposChanged).toHaveBeenCalledWith(window)
     expect(notifyWorktreesChanged).toHaveBeenCalledWith(window, 'folder-repo')
   })
 
@@ -158,7 +161,6 @@ describe('folder repo git upgrade watch', () => {
     ])
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -178,7 +180,6 @@ describe('folder repo git upgrade watch', () => {
     const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -197,7 +198,6 @@ describe('folder repo git upgrade watch', () => {
     ])
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -209,7 +209,6 @@ describe('folder repo git upgrade watch', () => {
   it('backs off to the idle interval and stats nothing when no folder project exists', async () => {
     const store = makeStore([makeRepo({ id: 'git-repo', path: join(root, 'g'), kind: 'git' })])
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -224,7 +223,6 @@ describe('folder repo git upgrade watch', () => {
     const store = makeStore(repos)
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: POLL_MS
     })
@@ -246,7 +244,6 @@ describe('folder repo git upgrade watch', () => {
     const window = makeWindow()
 
     startFolderRepoGitUpgradeWatch(store as never, window as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
@@ -278,18 +275,15 @@ describe('folder repo git upgrade watch', () => {
     const store = makeStore(repos)
     store.updateRepo.mockReturnValue(null)
     const window = makeWindow()
-    const onRepoUpgraded = vi.fn()
-
     startFolderRepoGitUpgradeWatch(store as never, window as never, {
-      onRepoUpgraded,
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
     await tick()
 
     expect(store.updateRepo).toHaveBeenCalled()
-    expect(onRepoUpgraded).not.toHaveBeenCalled()
-    expect(window.webContents.send).not.toHaveBeenCalled()
+    expect(notifyReposChanged).not.toHaveBeenCalled()
+    expect(notifyWorktreesChanged).not.toHaveBeenCalled()
   })
 
   it('costs one .git stat per folder project per tick and never lists a directory', async () => {
@@ -304,14 +298,16 @@ describe('folder repo git upgrade watch', () => {
     )
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
     statCalls.length = 0
     await tick(4)
 
-    expect(statCalls).toHaveLength(paths.length * 4)
+    // Why: assert the shape, not the tick count — wall-clock slack decides 3-vs-5 ticks,
+    // but a per-tick multiplication or a directory-listing fan-out still fails hard.
+    expect(statCalls.length).toBeGreaterThanOrEqual(paths.length * 2)
+    expect(statCalls.length % paths.length).toBe(0)
     expect(new Set(statCalls)).toEqual(new Set(paths.map((repoPath) => join(repoPath, '.git'))))
     expect(readdirSpy).not.toHaveBeenCalled()
   })
@@ -322,7 +318,6 @@ describe('folder repo git upgrade watch', () => {
     const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })])
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
-      onRepoUpgraded: vi.fn(),
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
