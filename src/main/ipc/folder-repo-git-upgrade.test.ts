@@ -157,6 +157,14 @@ describe('folder repo git upgrade watch', () => {
     await new Promise((resolve) => setTimeout(resolve, POLL_MS * times + POLL_MS))
   }
 
+  /** Why: a tick that spawns git can outrun a fixed wait on a loaded machine. */
+  async function waitForStats(count: number): Promise<void> {
+    const deadline = Date.now() + 5_000
+    while (statCalls.length < count && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    }
+  }
+
   it('upgrades a local folder repo once an external git init creates .git', async () => {
     const repoPath = join(root, 'my-project')
     await mkdir(repoPath)
@@ -271,10 +279,10 @@ describe('folder repo git upgrade watch', () => {
       pollIntervalMs: POLL_MS,
       idlePollIntervalMs: IDLE_POLL_MS
     })
-    await tick(6)
+    await waitForStats(4)
 
     // The marker is still stat'd every tick; git is not re-run for it.
-    expect(statCalls.length).toBeGreaterThan(2)
+    expect(statCalls.length).toBeGreaterThanOrEqual(4)
     expect(gitProbes).toHaveLength(1)
   })
 
