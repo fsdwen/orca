@@ -1,14 +1,26 @@
-import { stat } from 'node:fs/promises'
 import type { BrowserWindow } from 'electron'
 import type { Store } from '../persistence'
 import { notifyWorktreeGitStatusMetadataChanged, notifyWorktreesChanged } from './worktree-remote'
 import { getSshFilesystemProvider } from '../providers/ssh-filesystem-dispatch'
-import { isFolderRepo } from '../../shared/repo-kind'
-import { createWorktreeHeadIdentityRefreshState, refreshWorktreeHeadIdentities, type WorktreeHeadIdentityRefreshState } from './worktree-head-identity-refresh'
-import { collectLocalWorktreeBaseChanges, collectRemoteWorktreeBaseChanges, type WorktreeBaseCollectedChanges } from './worktree-base-directory-change-collector'
+import {
+  createWorktreeHeadIdentityRefreshState,
+  refreshWorktreeHeadIdentities,
+  type WorktreeHeadIdentityRefreshState
+} from './worktree-head-identity-refresh'
+import {
+  collectLocalWorktreeBaseChanges,
+  collectRemoteWorktreeBaseChanges,
+  type WorktreeBaseCollectedChanges
+} from './worktree-base-directory-change-collector'
 import type { WorktreeBaseWatchTarget } from './worktree-base-directory-event-filter'
-import { buildWorktreeBaseDirectoryWatchTargets, clearWorktreeBaseDirectoryWatchTargetWarnings } from './worktree-base-directory-watch-targets'
-import { createWorktreePollerWindowVisibility, startWorktreeBaseDirectoryPoller } from './worktree-base-directory-poller'
+import {
+  buildWorktreeBaseDirectoryWatchTargets,
+  clearWorktreeBaseDirectoryWatchTargetWarnings
+} from './worktree-base-directory-watch-targets'
+import {
+  createWorktreePollerWindowVisibility,
+  startWorktreeBaseDirectoryPoller
+} from './worktree-base-directory-poller'
 
 type ActiveWatch = WorktreeBaseWatchTarget & {
   mainWindow: BrowserWindow
@@ -49,6 +61,7 @@ function scheduleNotification(watch: ActiveWatch, changes: PendingNotificationIn
   for (const repoId of changes.headIdentityRepoIds ?? []) {
     watch.pendingHeadIdentityRepoIds.add(repoId)
   }
+  // clearTimeout tolerates null (no-op), so no guard needed before rescheduling.
   clearTimeout(watch.notifyTimer ?? undefined)
   watch.notifyTimer = setTimeout(() => {
     watch.notifyTimer = null
@@ -58,29 +71,33 @@ function scheduleNotification(watch: ActiveWatch, changes: PendingNotificationIn
     }
     const pendingStructure = [...watch.pendingStructureRepoIds]
     const hasHeadIdentity = watch.pendingHeadIdentityRepoIds.size > 0
-    // Source Control refreshes on index churn and head moves; structural repos already refresh.
+    // Source Control refreshes on both index churn and head moves; structural
+    // repos already refresh via the authoritative listing, so drop them here.
     const sourceControlRepoIds = new Set(
       [...watch.pendingGitStatusRepoIds, ...watch.pendingHeadIdentityRepoIds].filter(
         (repoId) => !watch.pendingStructureRepoIds.has(repoId)
       )
     )
+    // Structural ticks refresh silently (emit=false): the authoritative listing
+    // already reported them, so this only re-baselines ahead of later head diffs.
     const emitHeadIdentities = pendingStructure.length === 0
     clearPendingRepoIds(watch)
     for (const repoId of pendingStructure) {
       notifyWorktreesChanged(watch.mainWindow, repoId)
-      void tryUpgradeFolderRepo(repoId, watch.mainWindow) // detect external git init
     }
     for (const repoId of sourceControlRepoIds) {
       notifyWorktreeGitStatusMetadataChanged(watch.mainWindow, repoId)
     }
-    // Only re-read head identities for true head triggers; index rewrites cannot move HEAD.
+    // Only re-read head identities for true head triggers: an index rewrite
+    // cannot move HEAD, so status-only bursts skip the linked-worktree scan.
     if (supportsHeadIdentityRefresh(watch) && (pendingStructure.length > 0 || hasHeadIdentity)) {
       void refreshWorktreeHeadIdentities(watch, watch.headIdentityRefresh, emitHeadIdentities)
     }
   }, WATCH_DEBOUNCE_MS)
 }
 
-// SSH common dirs need per-signal reads; remote freshness stays on the structural path.
+// Why: SSH common dirs would need per-signal network reads to diff heads;
+// remote background freshness stays on the structural path for now.
 function supportsHeadIdentityRefresh(watch: ActiveWatch): boolean {
   return watch.kind === 'git-common' && !watch.connectionId
 }
@@ -89,35 +106,6 @@ function hasCollectedChanges(changes: WorktreeBaseCollectedChanges): boolean {
   return [changes.structureRepoIds, changes.gitStatusRepoIds, changes.headIdentityRepoIds].some(
     (ids) => ids.length > 0
   )
-}
-
-/** Detect folder->git upgrade on external git init; snapshot latestSyncContext to avoid stale-reference race. */
-async function tryUpgradeFolderRepo(repoId: string, mainWindow: BrowserWindow): Promise<void> {
-  const ctx = latestSyncContext
-  if (!ctx || ctx.mainWindow !== mainWindow || ctx.mainWindow.isDestroyed()) {
-    return
-  }
-  const repo = ctx.store.getRepo(repoId)
-  if (!repo || !isFolderRepo(repo)) {
-    return
-  }
-  try {
-    await stat(`${repo.path}/.git`)
-  } catch {
-    return // .git marker gone — retry on next poll cycle
-  }
-  const confirmed = ctx.store.getRepo(repoId)
-  if (!confirmed || !isFolderRepo(confirmed)) {
-    return
-  }
-  const updated = ctx.store.updateRepo(repoId, { kind: 'git' })
-  if (!updated) {
-    return
-  }
-  if (!ctx.mainWindow.isDestroyed()) {
-    ctx.mainWindow.webContents.send('repos:changed')
-  }
-  scheduleCurrentWorktreeBaseDirectoryWatcherSync()
 }
 
 function handleLocalWatchEvents(
@@ -162,7 +150,9 @@ function createActiveWatch(
   subscription: ActiveWatch['subscription']
 ): ActiveWatch {
   return {
-    ...target, mainWindow, subscription,
+    ...target,
+    mainWindow,
+    subscription,
     notifyTimer: null,
     pendingStructureRepoIds: new Set(),
     pendingGitStatusRepoIds: new Set(),
@@ -189,10 +179,16 @@ async function subscribeTarget(
       }
       handleRemoteWatchEvents(currentWatch, events)
     })
-    activeWatch = createActiveWatch(target, mainWindow, { unsubscribe: async () => unwatch() })
+    activeWatch = createActiveWatch(target, mainWindow, {
+      unsubscribe: async () => unwatch()
+    })
     return activeWatch
   }
-    // Poller reads shallow paths instead of registering fseventsd on the whole workspace root.
+
+  // Why: a recursive native watcher here forced fseventsd to deliver every
+  // event under the whole workspace root (all worktrees) / whole common .git
+  // (objects included) just to observe a few shallow paths. The poller reads
+  // exactly those paths and registers zero fseventsd clients.
   const subscription = await startWorktreeBaseDirectoryPoller(
     target,
     () => (activeWatches.get(target.key) ?? activeWatch)?.repos ?? target.repos,
@@ -202,10 +198,17 @@ async function subscribeTarget(
         handleLocalWatchEvents(currentWatch, null, events)
       }
     },
-    { visibility: createWorktreePollerWindowVisibility(() => (activeWatches.get(target.key) ?? activeWatch)?.mainWindow ?? null) }
+    {
+      visibility: createWorktreePollerWindowVisibility(
+        () => (activeWatches.get(target.key) ?? activeWatch)?.mainWindow ?? null
+      )
+    }
   )
   activeWatch = createActiveWatch(target, mainWindow, subscription)
   if (supportsHeadIdentityRefresh(activeWatch)) {
+    // Baseline eagerly so the first status-only signal — possibly hours after
+    // subscribe — diffs against subscribe-time heads instead of silently
+    // re-baselining past an external commit.
     void refreshWorktreeHeadIdentities(activeWatch, activeWatch.headIdentityRefresh, false)
   }
   return activeWatch
@@ -282,10 +285,13 @@ export async function syncWorktreeBaseDirectoryWatchers(
   }
 }
 
-export function setWorktreeBaseDirectoryWatcherSyncContext(store: Store, mainWindow: BrowserWindow): void {
+export function setWorktreeBaseDirectoryWatcherSyncContext(
+  store: Store,
+  mainWindow: BrowserWindow
+): void {
   latestSyncContext = { store, mainWindow }
-  // Why: older integration tests use lean BrowserWindow stubs; real windows still clear this
-  // context on close so stale watcher syncs cannot target dead chrome.
+  // Why: older integration tests use lean BrowserWindow stubs; real windows still
+  // clear this context on close so stale watcher syncs cannot target dead chrome.
   if (typeof mainWindow.once === 'function') {
     mainWindow.once('closed', () => {
       if (latestSyncContext?.mainWindow === mainWindow) {
@@ -295,8 +301,13 @@ export function setWorktreeBaseDirectoryWatcherSyncContext(store: Store, mainWin
   }
 }
 
-export function scheduleWorktreeBaseDirectoryWatcherSync(store: Store, mainWindow: BrowserWindow): void {
-  clearTimeout(scheduledSync)
+export function scheduleWorktreeBaseDirectoryWatcherSync(
+  store: Store,
+  mainWindow: BrowserWindow
+): void {
+  if (scheduledSync) {
+    clearTimeout(scheduledSync)
+  }
   scheduledSync = setTimeout(() => {
     scheduledSync = null
     if (mainWindow.isDestroyed()) {

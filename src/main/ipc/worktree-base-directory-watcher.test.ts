@@ -1,17 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Mock } from 'vitest'
 import { join, sep } from 'node:path'
 import type { GlobalSettings, Repo } from '../../shared/types'
 import type { WorktreeBasePollEvent } from './worktree-base-directory-poller'
 
-const { statMock } = vi.hoisted(() => ({
-  statMock: vi.fn(async () => ({ isDirectory: () => true })) as unknown as Mock
-}))
-
 vi.mock('fs/promises', () => ({
   readFile: vi.fn(async () => ''),
   realpath: vi.fn(async (path: string) => path),
-  stat: statMock
+  stat: vi.fn(async () => ({ isDirectory: () => true }))
 }))
 
 vi.mock('./worktree-base-directory-poller', () => ({
@@ -46,7 +41,6 @@ import { readGitCommonHeadIdentities } from './worktree-head-identity-reader'
 import { startWorktreeBaseDirectoryPoller } from './worktree-base-directory-poller'
 import {
   disposeWorktreeBaseDirectoryWatchers,
-  setWorktreeBaseDirectoryWatcherSyncContext,
   syncWorktreeBaseDirectoryWatchers
 } from './worktree-base-directory-watcher'
 import { matchingWorktreeBaseRepoIds } from './worktree-base-directory-event-filter'
@@ -105,7 +99,6 @@ describe('worktree base directory watcher', () => {
     unsubscribeMocks.clear()
     vi.mocked(getSshFilesystemProvider).mockReturnValue(undefined)
     vi.mocked(readGitCommonHeadIdentities).mockResolvedValue([])
-    statMock.mockImplementation(async () => ({ isDirectory: () => true }) as never)
     vi.mocked(startWorktreeBaseDirectoryPoller).mockImplementation(
       async (target, _getRepos, onEvents) => {
         const unsubscribe = vi.fn(async () => {})
@@ -474,134 +467,16 @@ describe('worktree base directory watcher', () => {
     expect(notifyWorktreeHeadIdentitiesChanged).not.toHaveBeenCalled()
   })
 
-  it('does not install local desktop watchers for runtime repos', async () => {
+  it('does not install local desktop watchers for runtime or folder repos', async () => {
     await syncWorktreeBaseDirectoryWatchers(
-      makeStore([makeRepo({ id: 'runtime', executionHostId: 'runtime:dev' })]) as never,
+      makeStore([
+        makeRepo({ id: 'runtime', executionHostId: 'runtime:dev' }),
+        makeRepo({ id: 'folder', kind: 'folder' })
+      ]) as never,
       makeWindow() as never
     )
 
     expect(startWorktreeBaseDirectoryPoller).not.toHaveBeenCalled()
-  })
-
-  it('installs base watchers for folder repos to detect external git init', async () => {
-    await syncWorktreeBaseDirectoryWatchers(
-      makeStore([makeRepo({ id: 'folder', kind: 'folder' })]) as never,
-      makeWindow() as never
-    )
-
-    expect(startWorktreeBaseDirectoryPoller).toHaveBeenCalled()
-  })
-
-  it('upgrades a folder repo to git when base poller detects a .git marker', async () => {
-    const folderRepo = makeRepo({
-      id: 'folder-repo',
-      kind: 'folder',
-      path: '/home/user/my-project'
-    })
-    const store = {
-      getSettings: () => settings,
-      getRepos: () => [folderRepo],
-      getRepo: vi.fn((id: string) =>
-        id === 'folder-repo' ? folderRepo : undefined
-      ),
-      updateRepo: vi.fn(() => folderRepo)
-    }
-    const window = makeWindow()
-    setWorktreeBaseDirectoryWatcherSyncContext(store as never, window as never)
-    await syncWorktreeBaseDirectoryWatchers(store as never, window as never)
-
-    emit('/home/user', [{ type: 'create', path: '/home/user/my-project/.git' }])
-    await vi.advanceTimersByTimeAsync(300)
-
-    expect(notifyWorktreesChanged).toHaveBeenCalledWith(
-      expect.anything(),
-      'folder-repo'
-    )
-    expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
-    expect(window.webContents.send).toHaveBeenCalledWith('repos:changed')
-  })
-
-  it('skips folder→git upgrade when latestSyncContext is null', async () => {
-    const folderRepo = makeRepo({
-      id: 'folder-repo',
-      kind: 'folder',
-      path: '/home/user/my-project'
-    })
-    const store = {
-      getSettings: () => settings,
-      getRepos: () => [folderRepo],
-      getRepo: vi.fn(() => folderRepo),
-      updateRepo: vi.fn()
-    }
-    // Do NOT call setWorktreeBaseDirectoryWatcherSyncContext — latestSyncContext stays null.
-    await syncWorktreeBaseDirectoryWatchers(store as never, makeWindow() as never)
-
-    emit('/home/user', [{ type: 'create', path: '/home/user/my-project/.git' }])
-    await vi.advanceTimersByTimeAsync(300)
-
-    // notifyWorktreesChanged fires (structural path), but upgrade is skipped.
-    expect(notifyWorktreesChanged).toHaveBeenCalled()
-    expect(store.updateRepo).not.toHaveBeenCalled()
-  })
-
-  it('handles updateRepo returning null (repo deleted mid-flight) without crashing', async () => {
-    const folderRepo = makeRepo({
-      id: 'folder-repo',
-      kind: 'folder',
-      path: '/home/user/my-project'
-    })
-    const store = {
-      getSettings: () => settings,
-      getRepos: () => [folderRepo],
-      getRepo: vi.fn(() => folderRepo),
-      updateRepo: vi.fn(() => null)
-    }
-    const window = makeWindow()
-    setWorktreeBaseDirectoryWatcherSyncContext(store as never, window as never)
-    await syncWorktreeBaseDirectoryWatchers(store as never, window as never)
-
-    emit('/home/user', [{ type: 'create', path: '/home/user/my-project/.git' }])
-    await vi.advanceTimersByTimeAsync(300)
-
-    expect(store.updateRepo).toHaveBeenCalledWith('folder-repo', { kind: 'git' })
-    expect(window.webContents.send).not.toHaveBeenCalled()
-  })
-
-  it('only upgrades the correct repo when multiple folder repos share a parent dir', async () => {
-    const repoA = makeRepo({
-      id: 'repo-A',
-      kind: 'folder',
-      path: '/home/user/project-a'
-    })
-    const repoB = makeRepo({
-      id: 'repo-B',
-      kind: 'folder',
-      path: '/home/user/project-b'
-    })
-    const store = {
-      getSettings: () => settings,
-      getRepos: () => [repoA, repoB],
-      getRepo: vi.fn((id: string) => [repoA, repoB].find((r) => r.id === id)),
-      updateRepo: vi.fn((id: string) => [repoA, repoB].find((r) => r.id === id) ?? null)
-    }
-    const window = makeWindow()
-    setWorktreeBaseDirectoryWatcherSyncContext(store as never, window as never)
-    await syncWorktreeBaseDirectoryWatchers(store as never, window as never)
-
-    // Only project-a gets a .git marker; make stat fail for project-b.
-    statMock.mockImplementation(async (path: string) => {
-      if (path === '/home/user/project-a/.git') {
-        return { isDirectory: () => true } as never
-      }
-      throw new Error('ENOENT')
-    })
-
-    emit('/home/user', [{ type: 'create', path: '/home/user/project-a/.git' }])
-    await vi.advanceTimersByTimeAsync(300)
-
-    expect(store.updateRepo).toHaveBeenCalledTimes(1)
-    expect(store.updateRepo).toHaveBeenCalledWith('repo-A', { kind: 'git' })
-    expect(store.updateRepo).not.toHaveBeenCalledWith('repo-B', { kind: 'git' })
   })
 
   it('uses the remote sibling root for default SSH worktree roots', async () => {
