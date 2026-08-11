@@ -93,6 +93,11 @@ import {
 import { useSystemPrefersDark } from './use-system-prefers-dark'
 import { useTerminalPaneGlobalEffects } from './use-terminal-pane-global-effects'
 import { useTerminalPaneLifecycle } from './use-terminal-pane-lifecycle'
+import { TerminalLinkActionPopover } from './TerminalLinkActionPopover'
+import {
+  closeTerminalLinkActionRequest,
+  type TerminalLinkActionRequest
+} from './terminal-link-action-request'
 import { useTerminalPaneContextMenu } from './use-terminal-pane-context-menu'
 import {
   detachTerminalPaneToTab,
@@ -390,6 +395,14 @@ function TerminalPane(
   const [paneCount, setPaneCount] = useState<number>(0)
   // Why: pane reorders can move panes without changing count or size, so overlay rects need an explicit layout-change render trigger.
   const [paneLayoutRevision, setPaneLayoutRevision] = useState(0)
+  const [terminalLinkActionRequest, setTerminalLinkActionRequest] =
+    useState<TerminalLinkActionRequest | null>(null)
+  const requestTerminalLinkAction = useCallback((request: TerminalLinkActionRequest) => {
+    setTerminalLinkActionRequest(request)
+  }, [])
+  const closeTerminalLinkActions = useCallback((dismissed?: TerminalLinkActionRequest) => {
+    setTerminalLinkActionRequest((current) => closeTerminalLinkActionRequest(current, dismissed))
+  }, [])
   const [searchOpen, setSearchOpen] = useState(false)
   const searchOpenRef = useRef(false)
   searchOpenRef.current = searchOpen
@@ -811,26 +824,6 @@ function TerminalPane(
     : quickCommandRepoId
       ? 'This Repo'
       : null
-  const {
-    hosts: quickCommandHosts,
-    refreshRemoteHost: refreshQuickCommandRemoteHost,
-    remoteHostLoadFailed: quickCommandHostLoadFailed,
-    remoteHostPending: quickCommandHostOwnershipPending
-  } = useTerminalQuickCommandHosts(worktreeId)
-  const visibleQuickCommandHosts = quickCommandHosts.map((host) => {
-    const commands = host.commands.filter(isTerminalQuickCommandComplete)
-    return {
-      globalCommands: commands.filter(
-        (command) => getTerminalQuickCommandScope(command).type === 'global'
-      ),
-      hostId: host.hostId,
-      label: host.label,
-      repoCommands: commands.filter((command) => {
-        const scope = getTerminalQuickCommandScope(command)
-        return scope.type === 'repo' && terminalQuickCommandMatchesRepo(command, quickCommandRepoId)
-      })
-    }
-  })
   const quickCommandGroupId =
     useAppStore(
       (s) =>
@@ -1382,6 +1375,7 @@ function TerminalPane(
     settings,
     settingsRef,
     requestOpenLinksInAppPreference,
+    requestTerminalLinkAction,
     effectiveMacOptionAsAlt,
     effectiveMacOptionAsAltRef: macOptionAsAltRef,
     initialLayoutRef,
@@ -1433,6 +1427,10 @@ function TerminalPane(
     resolveExternalPaneDropTarget,
     onExternalPaneDrop: handleExternalPaneDrop
   })
+
+  useEffect(() => {
+    closeTerminalLinkActions()
+  }, [closeTerminalLinkActions, isActive, isRendererVisible, paneLayoutRevision])
 
   useEffect(() => {
     const manager = managerRef.current
@@ -2551,6 +2549,32 @@ function TerminalPane(
     forceBracketedMultilineTextPaste,
     rightClickToPaste
   })
+  const {
+    hosts: quickCommandHosts,
+    refreshRemoteHost: refreshQuickCommandRemoteHost,
+    remoteHostLoadFailed: quickCommandHostLoadFailed,
+    remoteHostPending: quickCommandHostOwnershipPending
+  } = useTerminalQuickCommandHosts(worktreeId, contextMenu.open)
+  const visibleQuickCommandHosts = useMemo(
+    () =>
+      quickCommandHosts.map((host) => {
+        const commands = host.commands.filter(isTerminalQuickCommandComplete)
+        return {
+          globalCommands: commands.filter(
+            (command) => getTerminalQuickCommandScope(command).type === 'global'
+          ),
+          hostId: host.hostId,
+          label: host.label,
+          repoCommands: commands.filter((command) => {
+            const scope = getTerminalQuickCommandScope(command)
+            return (
+              scope.type === 'repo' && terminalQuickCommandMatchesRepo(command, quickCommandRepoId)
+            )
+          })
+        }
+      }),
+    [quickCommandHosts, quickCommandRepoId]
+  )
   useEffect(() => {
     if (contextMenu.open) {
       refreshQuickCommandRemoteHost()
@@ -3111,6 +3135,10 @@ function TerminalPane(
         canClearPaneTitle={menuPaneHasCustomTitle}
         onCopyTerminalId={() => void contextMenu.onCopyTerminalId()}
         onCopyPaneId={contextMenu.onCopyPaneId}
+      />
+      <TerminalLinkActionPopover
+        request={terminalLinkActionRequest}
+        onClose={closeTerminalLinkActions}
       />
       {/* Why: repos is a broad store slice; only subscribe while the editor is visible. */}
       {quickCommandEditorOpen ? (

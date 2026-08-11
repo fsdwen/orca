@@ -79,7 +79,8 @@ import {
   createWorktreePaletteRequestGuard,
   getNextWorktreePaletteSelection,
   getWorktreePaletteSelectionItemIds,
-  getWorktreePaletteCreateActionState
+  getWorktreePaletteCreateActionState,
+  type WorktreePaletteRequestGuard
 } from '@/lib/worktree-palette-create-action'
 import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
 import {
@@ -169,6 +170,8 @@ import { resolvePaletteFocusRestoreTarget } from '@/components/cmd-j/palette-foc
 import { selectWorktreePaletteCacheInputs } from '@/components/cmd-j/worktree-palette-cache-inputs'
 import { getRepoHostIdentity } from '@/store/slices/repo-host-identity'
 import { buildPluginQuickActions } from '@/components/cmd-j/plugin-quick-actions'
+import { WorkspaceEmojiSuggestionPopover } from '@/components/workspace-emoji/WorkspaceEmojiSuggestionPopover'
+import { useWorkspaceEmojiShortcodeInput } from '@/components/workspace-emoji/useWorkspaceEmojiShortcodeInput'
 import { usePluginCommands } from '@/store/plugin-panels'
 import {
   getComposerEligibleRepos,
@@ -260,8 +263,8 @@ type PaletteListEntry = PaletteItem | CreateWorktreePaletteItem | SectionHeader 
 
 const CREATE_WORKSPACE_QUICK_ACTION_ITEM_ID = `quick-action:${CREATE_WORKSPACE_QUICK_ACTION_ID}`
 
-// Why: outlast the CommandDialog close animation (~150–200ms) so gated status maps stay live until fading rows are gone.
-const PALETTE_STATUS_INPUTS_LINGER_MS = 300
+// Why: outlast the CommandDialog close animation so its rows do not disappear mid-fade.
+const PALETTE_CLOSE_LINGER_MS = 300
 
 type OpenTabPaletteItem = BrowserPaletteItem | SimulatorPaletteItem | WorkspaceTabPaletteItem
 
@@ -506,9 +509,42 @@ function getSettingsTargetFromSectionId(sectionId: string): {
 }
 
 export default function WorktreeJumpPalette(): React.JSX.Element | null {
+  const visible = useAppStore((s) => s.activeModal === 'worktree-palette')
+  const [lingering, setLingering] = useState(visible)
+  useEffect(() => {
+    if (visible) {
+      setLingering(true)
+      return
+    }
+    const timer = window.setTimeout(() => setLingering(false), PALETTE_CLOSE_LINGER_MS)
+    return () => window.clearTimeout(timer)
+  }, [visible])
+  // Why: reopening must invalidate a pending create lookup from the previous content mount.
+  const createLookupGuard = useMemo(() => createWorktreePaletteRequestGuard(), [])
+
+  if (!visible && !lingering) {
+    return null
+  }
+  return (
+    <WorktreeJumpPaletteContent
+      visible={visible}
+      lingering={lingering}
+      createLookupGuard={createLookupGuard}
+    />
+  )
+}
+
+function WorktreeJumpPaletteContent({
+  visible,
+  lingering,
+  createLookupGuard
+}: {
+  visible: boolean
+  lingering: boolean
+  createLookupGuard: WorktreePaletteRequestGuard
+}): React.JSX.Element | null {
   // Why: subscribe to language changes so translated memos recompute without a fake i18n.language dependency.
   useTranslation()
-  const visible = useAppStore((s) => s.activeModal === 'worktree-palette')
   const closeModal = useAppStore((s) => s.closeModal)
   const openModal = useAppStore((s) => s.openModal)
   const openSettingsPage = useAppStore((s) => s.openSettingsPage)
@@ -524,27 +560,14 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const detectedWorktreesByRepo = useAppStore((s) => s.detectedWorktreesByRepo)
   const pendingWorktreeCreations = useAppStore((s) => s.pendingWorktreeCreations)
   const pluginCommands = usePluginCommands()
-  // Why: keep status maps subscribed through the close animation — dropping them while CommandDialog fades out would flash rows empty mid-animation.
-  const [statusInputsLingering, setStatusInputsLingering] = useState(false)
-  useEffect(() => {
-    if (visible) {
-      setStatusInputsLingering(true)
-      return
-    }
-    const timer = window.setTimeout(
-      () => setStatusInputsLingering(false),
-      PALETTE_STATUS_INPUTS_LINGER_MS
-    )
-    return () => window.clearTimeout(timer)
-  }, [visible])
-  const paletteStatusInputsActive = visible || statusInputsLingering
-  // Why: these hot status maps get a new identity on every app-wide write, so gate the subscription on active-or-closing to stop the always-mounted palette re-rendering on unrelated terminals.
+  const paletteStatusInputsActive = visible || lingering
+  // Why: keep hot status maps live through the shell's close-animation linger.
   // Why: ptyIdsByTabId must be included — slept tabs keep a wake-hint sessionId in tab.ptyId, so without it the palette dot would lie green.
   const { ptyIdsByTabId, terminalLayoutsByTabId, tabsByWorktree } = useAppStore(
     useShallow((s) => selectPaletteStatusInputs(s, paletteStatusInputsActive))
   )
   const { prCache, issueCache, hostedReviewCache } = useAppStore(
-    useShallow((s) => selectWorktreePaletteCacheInputs(s, visible || statusInputsLingering))
+    useShallow((s) => selectWorktreePaletteCacheInputs(s, paletteStatusInputsActive))
   )
   const migrationUnsupportedByPtyId = useAppStore((s) => s.migrationUnsupportedByPtyId)
   const activeView = useAppStore((s) => s.activeView)
@@ -632,7 +655,6 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
   const inputRef = useRef<HTMLInputElement>(null)
   const fallbackFocusOuterFrameRef = useRef<number | null>(null)
   const fallbackFocusInnerFrameRef = useRef<number | null>(null)
-  const createLookupGuard = useMemo(() => createWorktreePaletteRequestGuard(), [])
   const preserveCreateLookupOnCloseRef = useRef(false)
 
   const repoMap = useMemo(() => new Map(repos.map((r) => [r.id, r])), [repos])
@@ -1893,6 +1915,11 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
     setSelectedItemId('')
     listRef.current?.scrollTo(0, 0)
   }, [])
+  const emojiInput = useWorkspaceEmojiShortcodeInput({
+    inputRef,
+    onValueChange: handleQueryChange,
+    value: query
+  })
 
   const cancelFallbackFocusFrames = useCallback((): void => {
     if (fallbackFocusOuterFrameRef.current !== null) {
@@ -2455,7 +2482,10 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
           'Search chats, terminals, worktrees, settings, and actions...'
         )}
         value={query}
-        onValueChange={handleQueryChange}
+        onValueChange={emojiInput.handleValueChange}
+        onClick={(event) => emojiInput.syncCursor(event.currentTarget)}
+        onSelect={(event) => emojiInput.syncCursor(event.currentTarget)}
+        onKeyDown={(event) => emojiInput.handleKeyDown(event)}
         wrapperClassName="mx-3 mt-3 rounded-lg border border-border/55 bg-muted/28 px-3.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
         iconClassName="mr-2.5 h-4 w-4 text-muted-foreground/60"
         className="h-12 text-[14px] placeholder:text-muted-foreground/75"
@@ -2470,6 +2500,19 @@ export default function WorktreeJumpPalette(): React.JSX.Element | null {
             />
           </div>
         }
+      />
+      <WorkspaceEmojiSuggestionPopover
+        anchorRef={inputRef}
+        open={emojiInput.open}
+        commandValue={emojiInput.commandValue}
+        heading={translate('auto.components.new.workspace.SmartWorkspaceNameField.emoji', 'Emoji')}
+        suggestions={emojiInput.suggestions}
+        onCommandValueChange={emojiInput.onCommandValueChange}
+        onSelect={emojiInput.selectSuggestion}
+        onOpenChange={(open) => !open && emojiInput.close()}
+        portalContainer={dialogElement}
+        side="bottom"
+        contentClassName="w-80"
       />
       <PaletteFilterChips model={filterModel} filter={filter} onFilterChange={setRawFilter} />
       <CommandList
