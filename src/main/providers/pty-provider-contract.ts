@@ -19,6 +19,8 @@ export type {
 
 export type PtyProviderBufferSnapshot = {
   data: string
+  /** Live state that can be restored without an alternate-screen frame. */
+  frameRestoreAnsi?: string
   /** Authoritative normal buffer captured beside an alternate-screen frame. */
   scrollbackAnsi?: string
   cols: number
@@ -36,6 +38,8 @@ export type PtySpawnOptions = {
   cols: number
   rows: number
   cwd?: string
+  /** Exact per-spawn cwd already proven by main; providers validate any other resolved path. */
+  prevalidatedCwd?: string
   env?: Record<string, string>
   envToDelete?: string[]
   /** Main-validated home provenance for an automatic Codex session resume. */
