@@ -2774,7 +2774,7 @@ function getRepoForExecutionHost(
   )
 }
 
-function notifyReposChanged(mainWindow: BrowserWindow): void {
+export function notifyReposChanged(mainWindow: BrowserWindow): void {
   if (!mainWindow.isDestroyed()) {
     mainWindow.webContents.send('repos:changed')
   }
