@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type * as FsPromises from 'node:fs/promises'
 import type * as GitRepo from '../git/repo'
-import type { Repo } from '../../shared/types'
+import type { Repo } from '../../shared/repo-types'
 
 // Why: the watch must stay one stat per folder project per tick — counting the real
 // calls is what keeps a directory-listing fan-out from creeping back in.
@@ -66,6 +66,7 @@ import {
   startFolderRepoGitUpgradeWatch,
   stopFolderRepoGitUpgradeWatch
 } from './folder-repo-git-upgrade'
+import { wakeFolderRepoGitUpgradeWatch } from './folder-repo-git-upgrade-wake'
 
 type TestWindow = {
   destroyed: boolean
@@ -230,6 +231,33 @@ describe('folder repo git upgrade watch', () => {
     expect(store.updateRepo).not.toHaveBeenCalled()
   })
 
+  it('retries after the last extra folder workspace is removed', async () => {
+    const repoPath = join(root, 'notebook-cleanup')
+    await mkdir(repoPath)
+    gitInit(repoPath)
+    const workspaceId = `folder-repo::${repoPath}::workspace:11111111-1111-1111-1111-111111111111`
+    const worktreeMeta: Record<string, unknown> = {
+      [`folder-repo::${repoPath}`]: { displayName: 'notebook-cleanup' },
+      [workspaceId]: { displayName: 'draft' }
+    }
+    const store = makeStore([makeRepo({ id: 'folder-repo', path: repoPath })], worktreeMeta)
+
+    startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
+      pollIntervalMs: POLL_MS,
+      idlePollIntervalMs: IDLE_POLL_MS
+    })
+    await tick(2)
+    expect(store.updateRepo).not.toHaveBeenCalled()
+
+    delete worktreeMeta[workspaceId]
+    await tick(2)
+
+    expect(store.updateRepo).toHaveBeenCalledWith(
+      'folder-repo',
+      expect.objectContaining({ kind: 'git' })
+    )
+  })
+
   it('still upgrades a project that only has its root workspace', async () => {
     const repoPath = join(root, 'solo')
     await mkdir(repoPath)
@@ -317,7 +345,7 @@ describe('folder repo git upgrade watch', () => {
 
     startFolderRepoGitUpgradeWatch(store as never, window as never, {
       pollIntervalMs: POLL_MS,
-      idlePollIntervalMs: POLL_MS
+      idlePollIntervalMs: IDLE_POLL_MS
     })
     await tick()
 
@@ -332,7 +360,7 @@ describe('folder repo git upgrade watch', () => {
     const nextWindow = makeWindow()
     startFolderRepoGitUpgradeWatch(store as never, nextWindow as never, {
       pollIntervalMs: POLL_MS,
-      idlePollIntervalMs: POLL_MS
+      idlePollIntervalMs: IDLE_POLL_MS
     })
     await tick(2)
 
@@ -445,12 +473,14 @@ describe('folder repo git upgrade watch', () => {
 
     startFolderRepoGitUpgradeWatch(store as never, makeWindow() as never, {
       pollIntervalMs: POLL_MS,
-      idlePollIntervalMs: POLL_MS
+      idlePollIntervalMs: IDLE_POLL_MS
     })
+    await tick()
     const repoPath = join(root, 'late-project')
     await mkdir(repoPath)
     gitInit(repoPath)
     repos.push(makeRepo({ id: 'late-repo', path: repoPath }))
+    wakeFolderRepoGitUpgradeWatch()
     await tick(2)
 
     expect(store.updateRepo).toHaveBeenCalledWith(

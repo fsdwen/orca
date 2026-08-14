@@ -2,11 +2,11 @@ import { stat } from 'node:fs/promises'
 import { realpathSync } from 'node:fs'
 import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
-import type { Repo } from '../../shared/types'
+import type { Repo } from '../../shared/repo-types'
 import type { Store } from '../persistence'
 import { getRepoExecutionHostId, LOCAL_EXECUTION_HOST_ID } from '../../shared/execution-host'
 import { isFolderRepo } from '../../shared/repo-kind'
-import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR } from '../../shared/worktree-id'
+import { FOLDER_WORKSPACE_INSTANCE_SEPARATOR } from '../../shared/worktree/id'
 import { normalizeRuntimePathForComparison } from '../../shared/cross-platform-path'
 import { isWslUncPath } from '../../shared/wsl-paths'
 import { getGitRepoRoot, isGitRepo } from '../git/repo'
@@ -14,6 +14,7 @@ import { prepareLocalWorktreeRootForRepo } from '../worktree-root-preparation'
 import { invalidateAuthorizedRootsCache } from './filesystem-auth'
 import { notifyReposChanged } from './repos'
 import { notifyWorktreesChanged } from './worktree-remote'
+import { setFolderRepoGitUpgradeWakeListener } from './folder-repo-git-upgrade-wake'
 import {
   createWorktreePollerWindowVisibility,
   WORKTREE_BASE_BACKSTOP_TICKS,
@@ -115,35 +116,36 @@ function resolveUpgrade(repoPath: string): { externalWorktreeVisibility?: 'hide'
     : {}
 }
 
-/** True when the marker was accepted and the repo upgraded. */
-async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<boolean> {
+type UpgradeResult = 'upgraded' | 'blocked' | 'rejected'
+
+async function upgradeFolderRepo(watch: UpgradeWatch, repoId: string): Promise<UpgradeResult> {
   // Re-read after the marker stat: the repo can be removed or already upgraded mid-tick.
   const current = watch.store.getRepo(repoId)
   if (!current || !isUpgradeCandidate(current)) {
-    return false
+    return 'blocked'
   }
   if (hasExtraFolderWorkspaces(watch.store, current)) {
-    return false
+    return 'blocked'
   }
   const updates = resolveUpgrade(current.path)
   if (!updates) {
-    return false
+    return 'rejected'
   }
   const upgraded = watch.store.updateRepo(repoId, { kind: 'git', ...updates })
   if (!upgraded) {
-    return true
+    return 'upgraded'
   }
   // Adding a git project prepares its worktree root; an upgrade has to do the same.
   await prepareLocalWorktreeRootForRepo(watch.store, upgraded)
   invalidateAuthorizedRootsCache()
   if (watch.disposed) {
-    return true
+    return 'upgraded'
   }
   // Why: reuse the repo-mutation notifier so paired clients refetch too (#11994) and
   // the repo picks up the base/common-dir watchers it was skipped for as a folder.
   notifyReposChanged(watch.mainWindow)
   notifyWorktreesChanged(watch.mainWindow, repoId)
-  return true
+  return 'upgraded'
 }
 
 async function pollOnce(watch: UpgradeWatch): Promise<void> {
@@ -165,7 +167,7 @@ async function pollOnce(watch: UpgradeWatch): Promise<void> {
     if (signature === null || rejectedMarkers.get(key) === signature) {
       continue
     }
-    if (!(await upgradeFolderRepo(watch, repo.id))) {
+    if ((await upgradeFolderRepo(watch, repo.id)) === 'rejected') {
       rejectedMarkers.set(key, signature)
     }
   }
@@ -180,6 +182,19 @@ function scheduleTick(watch: UpgradeWatch): void {
   const delay = watch.hasCandidates ? watch.pollIntervalMs : watch.idlePollIntervalMs
   watch.timer = setTimeout(() => void runTick(watch), delay)
   watch.timer.unref?.()
+}
+
+function wakeWatch(watch: UpgradeWatch): void {
+  if (watch.disposed) {
+    return
+  }
+  watch.hasCandidates = true
+  if (!watch.timer) {
+    return
+  }
+  clearTimeout(watch.timer)
+  watch.timer = null
+  scheduleTick(watch)
 }
 
 async function runTick(watch: UpgradeWatch): Promise<void> {
@@ -220,6 +235,7 @@ export function startFolderRepoGitUpgradeWatch(
   if (activeWatch) {
     activeWatch.store = store
     activeWatch.mainWindow = mainWindow
+    wakeWatch(activeWatch)
     return
   }
   const watch: UpgradeWatch = {
@@ -237,6 +253,7 @@ export function startFolderRepoGitUpgradeWatch(
     disposed: false
   }
   activeWatch = watch
+  setFolderRepoGitUpgradeWakeListener(() => wakeWatch(watch))
   watch.unsubscribeVisibility = watch.visibility.onWindowBecameVisible(() => {
     if (watch.disposed || !watch.parkedWhileHidden) {
       return
@@ -254,6 +271,7 @@ export function stopFolderRepoGitUpgradeWatch(): void {
   }
   activeWatch = null
   watch.disposed = true
+  setFolderRepoGitUpgradeWakeListener(null)
   rejectedMarkers.clear()
   if (watch.timer) {
     clearTimeout(watch.timer)
