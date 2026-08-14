@@ -22,9 +22,8 @@ import {
   type WorktreePollerWindowVisibility
 } from './worktree-base-directory-poller'
 
-// Why: with no folder project registered there is nothing to stat, so back the loop
-// off instead of waking every 2s. Adding the first folder project is the only case
-// that waits out one idle interval before the fast cadence starts.
+// Why: with no folder project registered there is nothing to stat, so back off until
+// the next catalog mutation wakes the fast cadence.
 const IDLE_POLL_INTERVAL_MS = WORKTREE_BASE_POLL_INTERVAL_MS * WORKTREE_BASE_BACKSTOP_TICKS
 
 type UpgradeWatch = {
@@ -42,9 +41,8 @@ type UpgradeWatch = {
 
 let activeWatch: UpgradeWatch | null = null
 
-// Why: git's verdict on a marker only changes when the marker does, and probing costs two
-// synchronous git spawns. Without this a `.git` git keeps rejecting — a stray file, an
-// interrupted init, a subdirectory of another repo — would respawn git every tick forever.
+// Why: git's verdict on a marker only changes when the marker does, and probing spawns git.
+// A rejected marker must not respawn git every tick forever.
 const rejectedMarkers = new Map<string, string>()
 
 // Why: `git init` on an SSH host or behind a WSL UNC root is not observable with a
