@@ -322,13 +322,22 @@ export function tryParseAutomationRrule(
   }
 }
 
-function formatTime(hour: number, minute: number): string {
+function formatTime(hour: number, minute: number, locale: string): string {
   const date = new Date()
   date.setHours(hour, minute, 0, 0)
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat(locale, {
     hour: 'numeric',
     minute: '2-digit'
   }).format(date)
+}
+
+function formatRecurringWeekday(dayOfWeek: number, locale: string): string {
+  const day = new Intl.DateTimeFormat(locale, { weekday: 'long' }).format(
+    new Date(2026, 0, 4 + dayOfWeek)
+  )
+  // Recurring-weekday labels pluralize only in English ("Fridays"); other
+  // supported locales (zh/ja/ko/es) keep the bare weekday.
+  return locale.toLowerCase().startsWith('en') ? `${day}s` : day
 }
 
 function getSingleSetValue(values: Set<number>): number | null {
@@ -357,24 +366,27 @@ function setContainsRange(values: Set<number>, min: number, max: number): boolea
   return true
 }
 
-function formatParsedRruleSchedule(schedule: ReturnType<typeof parseAutomationRrule>): string {
+function formatParsedRruleSchedule(
+  schedule: ReturnType<typeof parseAutomationRrule>,
+  locale: string
+): string {
   if (schedule.preset === 'hourly') {
     return `Hourly at :${String(schedule.minute).padStart(2, '0')}`
   }
-  const time = formatTime(schedule.hour, schedule.minute)
+  const time = formatTime(schedule.hour, schedule.minute, locale)
   if (schedule.preset === 'daily') {
     return `Daily at ${time}`
   }
   if (schedule.preset === 'weekdays') {
     return `Weekdays at ${time}`
   }
-  const day = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(
-    new Date(2026, 0, 4 + schedule.dayOfWeek)
-  )
-  return `${day}s at ${time}`
+  return `${formatRecurringWeekday(schedule.dayOfWeek, locale)} at ${time}`
 }
 
-function classifyParsedCronSchedule(rule: ParsedCron): AutomationCronScheduleClassification {
+function classifyParsedCronSchedule(
+  rule: ParsedCron,
+  locale: string
+): AutomationCronScheduleClassification {
   if (!cronHasPossibleOccurrence(rule, Date.now())) {
     return { kind: 'invalid', label: 'Invalid schedule' }
   }
@@ -397,7 +409,7 @@ function classifyParsedCronSchedule(rule: ParsedCron): AutomationCronScheduleCla
     }
   }
   if (minute !== null && hour !== null && unrestrictedCalendar) {
-    const time = formatTime(hour, minute)
+    const time = formatTime(hour, minute, locale)
     if (unrestrictedDayOfWeek) {
       return { kind: 'daily', hour, minute, label: `Daily at ${time}` }
     }
@@ -406,15 +418,12 @@ function classifyParsedCronSchedule(rule: ParsedCron): AutomationCronScheduleCla
     }
     const dayOfWeek = getSingleSetValue(rule.daysOfWeek)
     if (dayOfWeek !== null) {
-      const day = new Intl.DateTimeFormat(undefined, { weekday: 'long' }).format(
-        new Date(2026, 0, 4 + dayOfWeek)
-      )
       return {
         kind: 'weekly',
         hour,
         minute,
         dayOfWeek,
-        label: `${day}s at ${time}`
+        label: `${formatRecurringWeekday(dayOfWeek, locale)} at ${time}`
       }
     }
   }
@@ -422,23 +431,24 @@ function classifyParsedCronSchedule(rule: ParsedCron): AutomationCronScheduleCla
 }
 
 export function classifyAutomationCronSchedule(
-  schedule: string
+  schedule: string,
+  locale = 'en'
 ): AutomationCronScheduleClassification {
   try {
-    return classifyParsedCronSchedule(parseCronExpression(schedule.trim()))
+    return classifyParsedCronSchedule(parseCronExpression(schedule.trim()), locale)
   } catch {
     return { kind: 'invalid', label: 'Invalid schedule' }
   }
 }
 
-export function formatAutomationSchedule(scheduleExpression: string): string {
+export function formatAutomationSchedule(scheduleExpression: string, locale = 'en'): string {
   try {
     const trimmed = scheduleExpression.trim()
     const schedule = parseSchedule(trimmed)
     if (schedule.kind === 'cron') {
-      return classifyParsedCronSchedule(schedule).label
+      return classifyParsedCronSchedule(schedule, locale).label
     }
-    return formatParsedRruleSchedule(parseAutomationRrule(trimmed))
+    return formatParsedRruleSchedule(parseAutomationRrule(trimmed), locale)
   } catch {
     return 'Invalid schedule'
   }

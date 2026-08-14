@@ -17,7 +17,7 @@ import {
 function formatTimeForTest(hour: number, minute: number): string {
   const date = new Date()
   date.setHours(hour, minute, 0, 0)
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat('en', {
     hour: 'numeric',
     minute: '2-digit'
   }).format(date)
@@ -144,6 +144,23 @@ describe('automation schedules', () => {
       `Weekdays at ${formatTimeForTest(10, 15)}`
     )
     expect(formatAutomationSchedule('30 12 * * 7')).toBe(`Sundays at ${formatTimeForTest(12, 30)}`)
+  })
+
+  it('localizes recurring weekday labels with locale-appropriate plurals (#14404)', () => {
+    const zhTime = new Intl.DateTimeFormat('zh', { hour: 'numeric', minute: '2-digit' }).format(
+      new Date(2000, 0, 1, 12, 30)
+    )
+    const jaTime = new Intl.DateTimeFormat('ja', { hour: 'numeric', minute: '2-digit' }).format(
+      new Date(2000, 0, 1, 12, 30)
+    )
+    const esTime = new Intl.DateTimeFormat('es', { hour: 'numeric', minute: '2-digit' }).format(
+      new Date(2000, 0, 1, 12, 30)
+    )
+    expect(formatAutomationSchedule('30 12 * * 7', 'zh')).toBe(`星期日 at ${zhTime}`)
+    expect(formatAutomationSchedule('30 12 * * 7', 'ja')).toBe(`日曜日 at ${jaTime}`)
+    expect(formatAutomationSchedule('30 12 * * 7', 'es')).toBe(`domingo at ${esTime}`)
+    expect(formatAutomationSchedule('30 12 * * 7', 'en')).toBe(`Sundays at ${formatTimeForTest(12, 30)}`)
+    expect(formatAutomationSchedule('30 12 * * 7', 'zh')).not.toContain('星期日s')
   })
 
   it('tokenizes pasted cron whitespace without regex field splitting', () => {

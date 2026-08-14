@@ -14395,7 +14395,14 @@
           "f0202f3a89": "Daily",
           "57e83307d0": "Weekdays",
           "837d902bba": "Weekly",
-          "ddba78647e": "Custom cron"
+          "ddba78647e": "Custom cron",
+          "9d1a0949c3": "Sunday",
+          "6f8522e061": "Monday",
+          "5792315f09": "Tuesday",
+          "796c163589": "Wednesday",
+          "78ae6f0cd1": "Thursday",
+          "c33b138a16": "Friday",
+          "8b7051187b": "Saturday"
         },
         "AutomationTimeField": {
           "39ec1383f6": "AM or PM",

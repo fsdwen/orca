@@ -8,7 +8,7 @@ import {
 } from '../../../../shared/automation-schedules'
 import type { AutomationDraft } from './AutomationEditorDialog'
 import { Field } from './automation-page-parts'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 
 const FIELD_CONTROL_CLASS = 'border-input bg-input/30 shadow-xs dark:bg-input/30'
 
@@ -37,7 +37,7 @@ export function getCronScheduleStatusLabel(
       )
     }
   }
-  const formatted = formatAutomationSchedule(trimmed)
+  const formatted = formatAutomationSchedule(trimmed, getIntlLocale())
   return { kind: 'valid', label: formatted === 'Custom schedule' ? 'Valid custom cron' : formatted }
 }
 

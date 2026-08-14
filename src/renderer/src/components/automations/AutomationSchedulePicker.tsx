@@ -21,7 +21,7 @@ import type { AutomationDraft } from './AutomationEditorDialog'
 import { AutomationCustomCronPanel } from './AutomationCustomCronPanel'
 import { AutomationTimeField, parseAutomationTime } from './AutomationTimeField'
 import { Field } from './automation-page-parts'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 
 const FIELD_CONTROL_CLASS = 'border-input bg-input/30 shadow-xs dark:bg-input/30'
 
@@ -41,20 +41,27 @@ export function getAutomationSchedulePresetLabel([, fallbackLabel, labelKey]: re
   return translate(labelKey, fallbackLabel)
 }
 
-const DAY_OPTIONS = [
-  ['0', 'Sunday'],
-  ['1', 'Monday'],
-  ['2', 'Tuesday'],
-  ['3', 'Wednesday'],
-  ['4', 'Thursday'],
-  ['5', 'Friday'],
-  ['6', 'Saturday']
+export const DAY_OPTIONS = [
+  ['0', 'Sunday', 'auto.components.automations.AutomationSchedulePicker.9d1a0949c3'],
+  ['1', 'Monday', 'auto.components.automations.AutomationSchedulePicker.6f8522e061'],
+  ['2', 'Tuesday', 'auto.components.automations.AutomationSchedulePicker.5792315f09'],
+  ['3', 'Wednesday', 'auto.components.automations.AutomationSchedulePicker.796c163589'],
+  ['4', 'Thursday', 'auto.components.automations.AutomationSchedulePicker.78ae6f0cd1'],
+  ['5', 'Friday', 'auto.components.automations.AutomationSchedulePicker.c33b138a16'],
+  ['6', 'Saturday', 'auto.components.automations.AutomationSchedulePicker.8b7051187b']
 ] as const
+export function getDayOptionLabel([, fallbackLabel, labelKey]: readonly [
+  string,
+  string,
+  string
+]): string {
+  return translate(labelKey, fallbackLabel)
+}
 
 function getDraftScheduleLabel(draft: AutomationDraft): string {
   if (draft.preset === 'custom') {
     return draft.customSchedule.trim()
-      ? formatAutomationSchedule(draft.customSchedule)
+      ? formatAutomationSchedule(draft.customSchedule, getIntlLocale())
       : 'Advanced schedule'
   }
   const { hour, minute } = parseAutomationTime(draft.time)
@@ -64,7 +71,8 @@ function getDraftScheduleLabel(draft: AutomationDraft): string {
       hour,
       minute,
       dayOfWeek: Number(draft.dayOfWeek)
-    })
+    }),
+    getIntlLocale()
   )
 }
 
@@ -198,9 +206,9 @@ export function AutomationSchedulePicker({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent position="popper">
-                      {DAY_OPTIONS.map(([value, dayLabel]) => (
-                        <SelectItem key={value} value={value}>
-                          {dayLabel}
+                      {DAY_OPTIONS.map((option) => (
+                        <SelectItem key={option[0]} value={option[0]}>
+                          {getDayOptionLabel(option)}
                         </SelectItem>
                       ))}
                     </SelectContent>

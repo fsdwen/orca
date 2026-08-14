@@ -13650,7 +13650,14 @@
           "f0202f3a89": "Diario",
           "57e83307d0": "Días laborables",
           "837d902bba": "Semanal",
-          "ddba78647e": "Cron personalizado"
+          "ddba78647e": "Cron personalizado",
+          "9d1a0949c3": "domingo",
+          "6f8522e061": "lunes",
+          "5792315f09": "martes",
+          "796c163589": "miércoles",
+          "78ae6f0cd1": "jueves",
+          "c33b138a16": "viernes",
+          "8b7051187b": "sábado"
         },
         "AutomationTimeField": {
           "39ec1383f6": "mañana o tarde",

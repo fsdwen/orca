@@ -18,7 +18,7 @@ import {
   formatAutomationSchedule,
   isValidAutomationSchedule
 } from '../../../../shared/automation-schedules'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 import { parseHermesOutput, type ParsedHermesSection } from './hermes-cron-output-parse'
 
 function isPromptSection(section: ParsedHermesSection): boolean {
@@ -38,7 +38,7 @@ function getScheduleDisplay(value: string): string | null {
   if (!isValidAutomationSchedule(trimmed)) {
     return null
   }
-  return formatAutomationSchedule(trimmed)
+  return formatAutomationSchedule(trimmed, getIntlLocale())
 }
 
 function isScheduleMetadataLabel(label: string): boolean {

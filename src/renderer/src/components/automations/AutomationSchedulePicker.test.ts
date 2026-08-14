@@ -9,7 +9,9 @@ import {
 } from './AutomationCustomCronPanel'
 import {
   AUTOMATION_SCHEDULE_PRESET_OPTIONS,
+  DAY_OPTIONS,
   getAutomationSchedulePresetLabel,
+  getDayOptionLabel,
   getSchedulePresetDraft
 } from './AutomationSchedulePicker'
 import { isValidAutomationCronSchedule } from '../../../../shared/automation-schedules'
@@ -63,6 +65,31 @@ describe('AutomationSchedulePicker', () => {
   ])('translates every cadence option in %s', async (locale, labels) => {
     await i18n.changeLanguage(locale)
     expect(AUTOMATION_SCHEDULE_PRESET_OPTIONS.map(getAutomationSchedulePresetLabel)).toEqual(labels)
+  })
+
+  it('provides an i18n key for every selectable day of the week', () => {
+    expect(DAY_OPTIONS).toContainEqual([
+      '3',
+      'Wednesday',
+      'auto.components.automations.AutomationSchedulePicker.796c163589'
+    ])
+    for (const [value, fallbackLabel, labelKey] of DAY_OPTIONS) {
+      expect(value).toMatch(/^[0-6]$/)
+      expect(fallbackLabel).not.toBe('')
+      expect(labelKey).toMatch(
+        /^auto\.components\.automations\.AutomationSchedulePicker\.[0-9a-f]{10}$/
+      )
+    }
+  })
+
+  it.each([
+    ['zh', ['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六']],
+    ['ja', ['日曜日', '月曜日', '火曜日', '水曜日', '木曜日', '金曜日', '土曜日']],
+    ['ko', ['일요일', '월요일', '화요일', '수요일', '목요일', '금요일', '토요일']],
+    ['es', ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado']]
+  ])('translates every day option in %s', async (locale, labels) => {
+    await i18n.changeLanguage(locale)
+    expect(DAY_OPTIONS.map(getDayOptionLabel)).toEqual(labels)
   })
 
   it('seeds custom cron from the current simple schedule', () => {

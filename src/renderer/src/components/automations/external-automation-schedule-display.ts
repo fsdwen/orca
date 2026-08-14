@@ -6,7 +6,7 @@ import {
   formatAutomationSchedule,
   isValidAutomationCronSchedule
 } from '../../../../shared/automation-schedules'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 
 export type ExternalAutomationScheduleDisplay = {
   label: string
@@ -30,7 +30,7 @@ export function getExternalAutomationScheduleDisplay(
 
   for (const candidate of candidateSchedules) {
     if (candidate && isValidAutomationCronSchedule(candidate)) {
-      return { label: formatAutomationSchedule(candidate) }
+      return { label: formatAutomationSchedule(candidate, getIntlLocale()) }
     }
   }
 

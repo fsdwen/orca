@@ -44,7 +44,7 @@ import {
 } from './automations-table-layout'
 import { isPortaledRowMenuClick, isRowActivationKey } from './automation-list-row-interaction'
 import { AutomationListStatusCell } from './AutomationListStatusCell'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 
 export function AutomationListLocalRows({
   automations,
@@ -108,7 +108,7 @@ export function AutomationListLocalRows({
         const projectLabel =
           automationRepo?.displayName ??
           translate('auto.components.automations.AutomationsPage.13118faadf', 'Unknown project')
-        const scheduleLabel = formatAutomationSchedule(automation.rrule)
+        const scheduleLabel = formatAutomationSchedule(automation.rrule, getIntlLocale())
         const nextRunLabel = automation.enabled
           ? formatAutomationDateTimeWithRelative(automation.nextRunAt, relativeNow)
           : translate('auto.components.automations.AutomationsPage.paused', 'Paused')

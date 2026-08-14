@@ -15,7 +15,7 @@ import {
 } from './automation-usage-model'
 import type { AutomationTargetAvailability } from './automation-target-availability'
 import { getAutomationSourceDisplay } from './automation-source-display'
-import { translate } from '@/i18n/i18n'
+import { getIntlLocale, translate } from '@/i18n/i18n'
 
 type AutomationDetailProps = {
   automation: Automation | null
@@ -227,7 +227,7 @@ export function AutomationDetail({
       <div className="grid grid-cols-[repeat(auto-fit,minmax(9rem,1fr))] gap-5 rounded-md border border-border/50 bg-muted/30 px-4 py-3 shadow-sm">
         <DetailMetric
           label={translate('auto.components.automations.AutomationDetail.18763ded26', 'Schedule')}
-          value={formatAutomationSchedule(automation.rrule)}
+          value={formatAutomationSchedule(automation.rrule, getIntlLocale())}
         />
         <DetailMetric
           label={translate('auto.components.automations.AutomationDetail.578ff46987', 'Next run')}
